@@ -1,0 +1,14 @@
+node_modules/
+.env
+.env.*
+!.env.example
+*.log
+coverage/
+# Runtime state (ledger, spend log, session files and agent keys)
+data/
+.bench/
+policy.json
+# Solana build output, including the program's deploy keypair
+solana/target/
+solana/test-ledger/
+solana/.anchor/

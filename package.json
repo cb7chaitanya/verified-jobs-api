@@ -1,0 +1,47 @@
+{
+  "name": "verified-jobs-api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A pay-per-call API that tells AI agents whether a job posting is really open and whether someone in India can apply. Paid in USDC via Circle Nanopayments (Arc) or x402 on Solana.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "session": "tsx src/cli/session.ts",
+    "redeem": "tsx src/cli/redeem.ts",
+    "buyer": "tsx src/cli/buyer.ts",
+    "bench:local": "tsx bench/local.ts",
+    "solana:build": "cd solana && anchor build",
+    "solana:test": "cd solana && anchor build && cargo test -p pay_session_tests",
+    "bench:devnet": "tsx bench/devnet.ts",
+    "bench:gateway": "tsx bench/gateway.ts"
+  },
+  "dependencies": {
+    "@circle-fin/x402-batching": "4.0.0",
+    "@solana-program/token": "0.16.1",
+    "@solana/kit": "8.6.0",
+    "@x402/core": "2.30.0",
+    "@x402/evm": "2.30.0",
+    "@x402/express": "2.30.0",
+    "@x402/fetch": "2.30.0",
+    "@x402/svm": "2.30.0",
+    "express": "5.3.0",
+    "html-to-text": "10.0.1",
+    "undici": "7.30.2",
+    "viem": "2.57.16",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@types/express": "5.0.3",
+    "@types/html-to-text": "9.0.4",
+    "@types/node": "22.18.0",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3",
+    "vitest": "3.2.4"
+  }
+}
