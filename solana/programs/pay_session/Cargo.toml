@@ -1,0 +1,22 @@
+[package]
+name = "pay_session"
+version = "0.1.0"
+description = "Prepaid USDC payment sessions for pay-per-call APIs: deposit once, pay each call with an off-chain signed cumulative amount, redeem in batches."
+edition = "2021"
+rust-version = "1.84"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "pay_session"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+
+[dependencies]
+anchor-lang = "=0.31.1"
+anchor-spl = { version = "=0.31.1", features = ["token"] }

@@ -1,0 +1,4 @@
+# The Solana platform-tools cargo (1.84) can't read edition-2024 crates, so resolve
+# dependencies to versions compatible with rust-version 1.84.
+[resolver]
+incompatible-rust-versions = "fallback"
