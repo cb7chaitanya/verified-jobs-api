@@ -1,0 +1,22 @@
+[package]
+name = "pay_session_tests"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.84"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+test = false
+doctest = false
+
+[[test]]
+name = "pay_session"
+path = "src/lib.rs"
+
+[dependencies]
+litesvm = "0.6"
+solana-sdk = "2.2"
+spl-token = { version = "7", features = ["no-entrypoint"] }
+anchor-lang = "=0.31.1"
+pay_session = { path = "../programs/pay_session", features = ["no-entrypoint"] }

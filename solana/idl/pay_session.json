@@ -1,0 +1,614 @@
+{
+  "address": "E5fA3t5xQkhjSiwrE5EzJ4wgr9fWSbTZzXsVxgKjGy3T",
+  "metadata": {
+    "name": "pay_session",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Prepaid USDC payment sessions for pay-per-call APIs: deposit once, pay each call with an off-chain signed cumulative amount, redeem in batches."
+  },
+  "instructions": [
+    {
+      "name": "close_session",
+      "docs": [
+        "Refund the unredeemed balance to the buyer and close. The buyer may close only after expiry;",
+        "the seller may close at any time (it forfeits any receipts it hasn't redeemed)."
+      ],
+      "discriminator": [
+        68,
+        114,
+        178,
+        140,
+        222,
+        38,
+        248,
+        211
+      ],
+      "accounts": [
+        {
+          "name": "caller",
+          "signer": true
+        },
+        {
+          "name": "buyer",
+          "writable": true
+        },
+        {
+          "name": "session",
+          "writable": true
+        },
+        {
+          "name": "mint",
+          "relations": [
+            "session"
+          ]
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "session"
+              }
+            ]
+          }
+        },
+        {
+          "name": "buyer_token",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "open_session",
+      "discriminator": [
+        130,
+        54,
+        124,
+        7,
+        236,
+        20,
+        104,
+        104
+      ],
+      "accounts": [
+        {
+          "name": "buyer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "seller"
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "buyer_token",
+          "writable": true
+        },
+        {
+          "name": "session",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  101,
+                  115,
+                  115,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "buyer"
+              },
+              {
+                "kind": "account",
+                "path": "seller"
+              },
+              {
+                "kind": "arg",
+                "path": "nonce"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "session"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "nonce",
+          "type": "u64"
+        },
+        {
+          "name": "deposit",
+          "type": "u64"
+        },
+        {
+          "name": "expires_at",
+          "type": "i64"
+        },
+        {
+          "name": "signer",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "redeem",
+      "docs": [
+        "Pay the seller everything owed up to `cumulative`, proven by the buyer's signed receipt."
+      ],
+      "discriminator": [
+        184,
+        12,
+        86,
+        149,
+        70,
+        196,
+        97,
+        225
+      ],
+      "accounts": [
+        {
+          "name": "seller",
+          "signer": true,
+          "relations": [
+            "session"
+          ]
+        },
+        {
+          "name": "session",
+          "writable": true
+        },
+        {
+          "name": "mint",
+          "relations": [
+            "session"
+          ]
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "session"
+              }
+            ]
+          }
+        },
+        {
+          "name": "seller_token",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "instructions",
+          "address": "Sysvar1nstructions1111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "cumulative",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "top_up",
+      "discriminator": [
+        236,
+        225,
+        96,
+        9,
+        60,
+        106,
+        77,
+        208
+      ],
+      "accounts": [
+        {
+          "name": "buyer",
+          "signer": true,
+          "relations": [
+            "session"
+          ]
+        },
+        {
+          "name": "session",
+          "writable": true
+        },
+        {
+          "name": "mint",
+          "relations": [
+            "session"
+          ]
+        },
+        {
+          "name": "buyer_token",
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "session"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Session",
+      "discriminator": [
+        243,
+        81,
+        72,
+        115,
+        214,
+        188,
+        72,
+        144
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "SessionClosed",
+      "discriminator": [
+        57,
+        237,
+        11,
+        243,
+        194,
+        34,
+        120,
+        27
+      ]
+    },
+    {
+      "name": "SessionOpened",
+      "discriminator": [
+        34,
+        79,
+        77,
+        95,
+        195,
+        207,
+        104,
+        223
+      ]
+    },
+    {
+      "name": "SessionRedeemed",
+      "discriminator": [
+        184,
+        173,
+        213,
+        117,
+        167,
+        85,
+        212,
+        20
+      ]
+    },
+    {
+      "name": "SessionToppedUp",
+      "discriminator": [
+        3,
+        83,
+        18,
+        81,
+        116,
+        179,
+        58,
+        150
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "ZeroAmount",
+      "msg": "Amount must be greater than zero"
+    },
+    {
+      "code": 6001,
+      "name": "DurationTooShort",
+      "msg": "Session must last at least 15 minutes"
+    },
+    {
+      "code": 6002,
+      "name": "DurationTooLong",
+      "msg": "Session can last at most 30 days"
+    },
+    {
+      "code": 6003,
+      "name": "BuyerIsSeller",
+      "msg": "Buyer and seller must differ"
+    },
+    {
+      "code": 6004,
+      "name": "Expired",
+      "msg": "Session has expired"
+    },
+    {
+      "code": 6005,
+      "name": "NotExpired",
+      "msg": "Session hasn't expired yet"
+    },
+    {
+      "code": 6006,
+      "name": "Unauthorized",
+      "msg": "Only the session's buyer or seller can do that"
+    },
+    {
+      "code": 6007,
+      "name": "NotIncreasing",
+      "msg": "Cumulative amount must be greater than what was already redeemed"
+    },
+    {
+      "code": 6008,
+      "name": "ExceedsDeposit",
+      "msg": "Cumulative amount exceeds the deposit"
+    },
+    {
+      "code": 6009,
+      "name": "MissingSignatureInstruction",
+      "msg": "Redeem must directly follow an ed25519 signature instruction"
+    },
+    {
+      "code": 6010,
+      "name": "BadSignatureInstruction",
+      "msg": "Malformed ed25519 instruction: exactly one signature, with all data inside that instruction"
+    },
+    {
+      "code": 6011,
+      "name": "WrongSigner",
+      "msg": "Receipt wasn't signed by the session's signer"
+    },
+    {
+      "code": 6012,
+      "name": "WrongReceipt",
+      "msg": "Signed receipt doesn't match this program, session and amount"
+    },
+    {
+      "code": 6013,
+      "name": "Overflow",
+      "msg": "Arithmetic overflow"
+    }
+  ],
+  "types": [
+    {
+      "name": "Session",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "buyer",
+            "type": "pubkey"
+          },
+          {
+            "name": "seller",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "signer",
+            "docs": [
+              "Key that signs receipts. Can be a short-lived agent key, so the wallet's own key never signs per call."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "nonce",
+            "type": "u64"
+          },
+          {
+            "name": "deposit",
+            "type": "u64"
+          },
+          {
+            "name": "redeemed",
+            "type": "u64"
+          },
+          {
+            "name": "expires_at",
+            "type": "i64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "vault_bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SessionClosed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "session",
+            "type": "pubkey"
+          },
+          {
+            "name": "refund",
+            "type": "u64"
+          },
+          {
+            "name": "redeemed",
+            "type": "u64"
+          },
+          {
+            "name": "by",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SessionOpened",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "session",
+            "type": "pubkey"
+          },
+          {
+            "name": "buyer",
+            "type": "pubkey"
+          },
+          {
+            "name": "seller",
+            "type": "pubkey"
+          },
+          {
+            "name": "deposit",
+            "type": "u64"
+          },
+          {
+            "name": "expires_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SessionRedeemed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "session",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "cumulative",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SessionToppedUp",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "session",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "deposit",
+            "type": "u64"
+          }
+        ]
+      }
+    }
+  ]
+}
