@@ -1,0 +1,10 @@
+{
+  "allowedHosts": ["localhost:3000"],
+  "networks": ["eip155:5042002", "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1"],
+  "payees": {
+    "eip155:5042002": "0xYourSellerArcAddress",
+    "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1": "YourSellerSolanaAddress"
+  },
+  "maxPerCallUsdc": "0.002",
+  "dailyCapUsdc": "1.00"
+}
