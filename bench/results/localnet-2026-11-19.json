@@ -1,0 +1,35 @@
+{
+  "at": "2026-11-19T14:57:13.693Z",
+  "cluster": "solana-test-validator (local)",
+  "calls": 100,
+  "pricePerCall": "0.001 USDC",
+  "note": "Job checks are stubbed, so latency is payment overhead plus local HTTP. Fees are what the local validator charged (5,000 lamports per signature, no priority fee). The exact path labels the local validator with the devnet CAIP-2 id because @x402/svm accepts only known cluster ids; all its RPC calls go to the local validator.",
+  "exact": {
+    "served": 100,
+    "latencyMs": {
+      "p50": 528,
+      "p95": 539,
+      "mean": 477
+    },
+    "onchainTransactions": 100,
+    "feesLamports": "1000100",
+    "sellerReceived": "100000",
+    "expected": "100000"
+  },
+  "session": {
+    "served": 100,
+    "latencyMs": {
+      "p50": 1,
+      "p95": 2,
+      "mean": 1
+    },
+    "openMs": 271,
+    "redeemMs": 351,
+    "onchainTransactions": 2,
+    "feesLamports": "15000",
+    "sellerReceived": "100000",
+    "expected": "100000",
+    "note": "Opening also pays rent for the session and vault accounts, refunded to the buyer on close."
+  },
+  "balancesMatch": true
+}
