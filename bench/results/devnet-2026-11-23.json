@@ -1,5 +1,5 @@
 {
-  "at": "2026-11-23T14:49:19.022Z",
+  "at": "2026-11-23T17:46:11.838Z",
   "cluster": "Solana devnet",
   "program": "E5fA3t5xQkhjSiwrE5EzJ4wgr9fWSbTZzXsVxgKjGy3T",
   "calls": 100,
@@ -10,9 +10,9 @@
     "facilitator": "https://x402.org/facilitator",
     "served": 100,
     "latencyMs": {
-      "p50": 1853,
-      "p95": 3396,
-      "mean": 2173
+      "p50": 1707,
+      "p95": 3265,
+      "mean": 2020
     },
     "onchainTransactions": 100,
     "feesLamports": "1000100",
@@ -28,24 +28,24 @@
       "ok": 49,
       "settlement_pending": 51
     },
-    "sampleTx": "https://explorer.solana.com/tx/cVdjr48EYvFhBJNBCREwTqqjk3p4y2oSXH8osG1vYVU2efhStDcZPWB1Vzy8VyGCXb5ZJxaVo6pNC18TAUG5ayA?cluster=devnet"
+    "sampleTx": "https://explorer.solana.com/tx/1srnxtUFkVCAwM3SrhNNmbqRY3CazvJmPHQe6anUhacmnH6XtZhoxbxm51fkfvBWQ9SXVzuLRA2aRxxwRuPQb4N?cluster=devnet"
   },
   "session": {
     "served": 100,
     "latencyMs": {
-      "p50": 9,
-      "p95": 94,
-      "mean": 37
+      "p50": 8,
+      "p95": 123,
+      "mean": 45
     },
-    "openMs": 1101,
-    "redeemMs": 889,
+    "openMs": 1347,
+    "redeemMs": 1057,
     "onchainTransactions": 2,
     "feesLamports": "15000",
     "sellerReceived": "100000",
     "expected": "100000",
-    "openTx": "https://explorer.solana.com/tx/hE7BMn6WT1hqVD86S31AsjQfKMyKo35e1h2Mc2FryiVhYiYCMYDgMqnc4PqoHvura9TubMosm28r6v1L3b3d99T?cluster=devnet",
-    "redeemTx": "https://explorer.solana.com/tx/3U3jGRaHjyzLofRnkph4Cce48bumvo8UBxNoV2gXHogkP9AJnvuG5aULnT7ygiJ8aypASmUmTnLZC8RKWQ9WXyV9?cluster=devnet",
-    "closeTx": "https://explorer.solana.com/tx/2J5RSjtB6Dxd9Vcy9zVgxxgobq3CWQQxj1HrHUNTRDeWHnFtFXAuoGAtth4KMvKQLEXRFdYEvJFgGTYBs5iCZhhD?cluster=devnet",
+    "openTx": "https://explorer.solana.com/tx/5MSg2QnL1ZywAMgeydmFEofUxxpcyRkaw1Dnnie4eDDxCt44y9zUirQWjZL1jtWRuArB4Yz8VQpRZ5jAuEpknmeT?cluster=devnet",
+    "redeemTx": "https://explorer.solana.com/tx/5UuHsAa5AUKrUhLS4s1i2sjjNAjcwTaPUtqWGaWphWVFE1GJLVX323hsnfXcQG7D7nMx8ha8Ue874UUdL5Z5inj9?cluster=devnet",
+    "closeTx": "https://explorer.solana.com/tx/53hXfHRaaRtykdeMncJKkyAdK19spZeWVB5YmBxHCwYPhPNjYH2Dj3fitvEBztHdXaQyfTNdFinRNGipWtF646jG?cluster=devnet",
     "note": "Opening pays rent for the session and vault accounts; the close returned it with the unused deposit."
   },
   "balancesMatch": true

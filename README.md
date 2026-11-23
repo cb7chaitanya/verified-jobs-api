@@ -44,7 +44,7 @@ Notes on these numbers:
 
 ### On Solana devnet
 
-_Measured before the security fixes below. The current program (receipt format v2, upgraded on devnet on 2026-11-23 and smoke-tested there: open, redeem, close) adds 8 bytes to each receipt and one account field; the payment paths are otherwise unchanged._
+_Measured on the current code, after the security fixes below: program with v2 receipts and per-pair nonces, upgraded on devnet on 2026-11-23._
 
 `pnpm bench:devnet` runs the same comparison against the deployed program on Solana devnet, with real devnet USDC and the public `x402.org` facilitator for `exact`. Calls are spaced 1 s apart so the public devnet RPC doesn't rate-limit the run (the pause isn't counted in latency). Results are in `bench/results/devnet-2026-11-23.json`; the run without the fix described below is in `devnet-2026-11-23-raw.json` (`BENCH_RAW_EXACT=1`).
 
@@ -52,14 +52,14 @@ _Measured before the security fixes below. The current program (receipt format v
 |---|---|---|
 | Calls served | 100 / 100 | 100 / 100 |
 | Seller received | 0.100000 USDC ✓ | 0.100000 USDC ✓ |
-| On-chain transactions | 100 | 2 ([open](https://explorer.solana.com/tx/hE7BMn6WT1hqVD86S31AsjQfKMyKo35e1h2Mc2FryiVhYiYCMYDgMqnc4PqoHvura9TubMosm28r6v1L3b3d99T?cluster=devnet) + [one redeem](https://explorer.solana.com/tx/3U3jGRaHjyzLofRnkph4Cce48bumvo8UBxNoV2gXHogkP9AJnvuG5aULnT7ygiJ8aypASmUmTnLZC8RKWQ9WXyV9?cluster=devnet)) |
+| On-chain transactions | 100 | 2 ([open](https://explorer.solana.com/tx/5MSg2QnL1ZywAMgeydmFEofUxxpcyRkaw1Dnnie4eDDxCt44y9zUirQWjZL1jtWRuArB4Yz8VQpRZ5jAuEpknmeT?cluster=devnet) + [one redeem](https://explorer.solana.com/tx/5UuHsAa5AUKrUhLS4s1i2sjjNAjcwTaPUtqWGaWphWVFE1GJLVX323hsnfXcQG7D7nMx8ha8Ue874UUdL5Z5inj9?cluster=devnet)) |
 | Network fees | 1,000,100 lamports, paid by the facilitator | 15,000 lamports total |
-| Payment latency per call (p50 / p95) | 1,853 / 3,396 ms | 9 / 94 ms |
-| One-off costs | none | open 1,101 ms; redeem 889 ms; rent refunded on [close](https://explorer.solana.com/tx/2J5RSjtB6Dxd9Vcy9zVgxxgobq3CWQQxj1HrHUNTRDeWHnFtFXAuoGAtth4KMvKQLEXRFdYEvJFgGTYBs5iCZhhD?cluster=devnet) |
+| Payment latency per call (p50 / p95) | 1,707 / 3,265 ms | 8 / 123 ms |
+| One-off costs | none | open 1,347 ms; redeem 1,057 ms; rent refunded on [close](https://explorer.solana.com/tx/53hXfHRaaRtykdeMncJKkyAdK19spZeWVB5YmBxHCwYPhPNjYH2Dj3fitvEBztHdXaQyfTNdFinRNGipWtF646jG?cluster=devnet) (a buyer/seller pair's first session also creates a 17-byte nonce record, about 0.001 SOL, kept so addresses are never reused) |
 
 **Found and fixed: charged but not served on `exact`.** The public facilitator often answers `settle` with `settlement_pending`: the transfer is broadcast but it didn't see the confirmation in time. The x402 middleware treats that as a failure and refuses the call, yet the transfer lands a moment later. Without a fix, all 100 `exact` payments landed but only 60 calls were served (`devnet-2026-11-23-raw.json`); an earlier unpaced run served 18 calls while 74 payments landed.
 
-`src/exact-confirm.ts` wraps the facilitator. On a pending settlement it watches the chain for the broadcast transaction and serves the call only if that transaction confirmed without error, carries this payment's own buyer signature, moved at least the price in the right mint to the seller, and hasn't been accepted before. Anything else keeps the refusal. With it, 51 of the 100 settlements came back pending, all 51 were confirmed on-chain and served, and nothing was charged without a result. The cost is latency on those calls (p95 3.4 s, up from 2.1 s). `pay_session` doesn't need this, because the seller accepts a signed receipt off-chain and redeems later.
+`src/exact-confirm.ts` wraps the facilitator. On a pending settlement it watches the chain for the broadcast transaction and serves the call only if that transaction confirmed without error, carries this payment's own buyer signature, moved at least the price in the right mint to the seller, and hasn't been accepted before. Anything else keeps the refusal. With it, 51 of the 100 settlements came back pending, all 51 were confirmed on-chain and served, and nothing was charged without a result. The cost is latency on those calls (p95 about 3.3 s, against 2.1 s without the fallback). If a transfer lands after the 30 s window, the buyer agent resends the same signed payment and is served once it confirms, so a late landing doesn't cost a call. `pay_session` doesn't need this, because the seller accepts a signed receipt off-chain and redeems later.
 
 ### Circle Gateway on Arc Testnet
 
@@ -68,10 +68,10 @@ _Measured before the security fixes below. The current program (receipt format v
 | | Circle Gateway Nanopayments |
 |---|---|
 | Calls served | 50 / 50 |
-| Buyer's Gateway balance | 1.000000 → 0.950000 USDC ✓ |
+| Buyer's Gateway balance | 0.949000 → 0.899000 USDC ✓ |
 | On-chain transactions per call | 0 (Gateway settles in batches later) |
 | Buyer gas per call | none |
-| Payment latency per call (p50 / p95) | 601 / 835 ms (signing plus Gateway's verify and settle API calls) |
+| Payment latency per call (p50 / p95) | 607 / 734 ms (signing plus Gateway's verify and settle API calls) |
 
 ## Charging rules
 
@@ -262,14 +262,12 @@ The code was reviewed with three published agent skills; every issue they raised
 - **[trailofbits/skills `solana-vulnerability-scanner`](https://github.com/trailofbits/skills)** (the Anchor program): arbitrary CPI, PDA validation, ownership, signer, sysvar and instruction-introspection checks are all clear, each backed by a hostile-input test.
 - **[frankcastleauditor/safe-solana-builder](https://github.com/frankcastleauditor/safe-solana-builder)** rules applied as an audit checklist. Fixed: receipts replayable after a close and re-open (confirmed by test before the fix); Token-2022 extension mints; fee-on-transfer accounting; checked arithmetic; payouts to the seller's own account; and the missing security tests.
 
-Not run: Trail of Bits' solana-lints and a dependency advisory scan (both need network access to install); do both before any mainnet use.
+Dependency scans: `pnpm audit` reports no known vulnerabilities. `cargo audit` passes; the advisories it lists are all in the LiteSVM test harness, not the on-chain program, each documented with its dependency path in `solana/.cargo/audit.toml`. Trail of Bits' solana-lints have not been run (they need `cargo-dylint` installed); run them before any mainnet use.
 
 ## Limits
 
 - **Testnet only and unaudited,** including the Anchor program.
 - **Eligibility answers one question:** can someone based in India apply?
-- **Pending `exact` settlements are confirmed for up to 30 s.** A transaction that lands later than that is still a payment without a result. (Accepted transactions are checked against the durable payment ledger, so one transfer pays for one call, even across restarts.)
-- **Same-slot re-open.** Receipts are bound to the slot a session was opened in. Closing a session and re-opening the same address *in the same slot* would share that value; it can't happen across slots.
 - **USDC's freeze authority** can freeze any vault. Inherent to USDC; extension mints are refused, but plain freeze authorities can't be without refusing USDC.
 - **Upgrade authority.** The devnet program is upgradeable by its deploy key, which could replace the code and drain vaults. Before any mainnet use: a multisig with a timelock, or an immutable program.
 - **On-chain identity registration** is manual (see above).
