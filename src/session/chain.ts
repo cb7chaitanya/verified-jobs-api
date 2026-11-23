@@ -48,18 +48,28 @@ export async function caip2(rpc: Rpc): Promise<`solana:${string}`> {
   return `solana:${hash.slice(0, 32)}`;
 }
 
-/** Reads session accounts over RPC, with a short cache so a burst of calls costs one lookup. */
+/**
+ * Reads session accounts over RPC, with a short cache so a burst of calls costs one lookup. Keys
+ * come from unpaid requests, so the cache is bounded (oldest entries go first) and "no such
+ * session" answers are cached too.
+ */
 export class RpcSessionReader implements SessionReader {
   private cache = new Map<string, { at: number; value: SessionState | null }>();
   constructor(
     private readonly rpc: Rpc,
     private readonly ttlMs = 3000,
+    private readonly maxEntries = 5000,
   ) {}
+  get size() {
+    return this.cache.size;
+  }
   async get(session: Address): Promise<SessionState | null> {
     const hit = this.cache.get(session);
     if (hit && Date.now() - hit.at < this.ttlMs) return hit.value;
     const { value } = await this.rpc.getAccountInfo(session, { encoding: "base64", commitment: "confirmed" }).send();
     const state = value && value.owner === PROGRAM_ID ? decodeSession(session, new Uint8Array(getBase64Encoder().encode(value.data[0]))) : null;
+    this.cache.delete(session);
+    while (this.cache.size >= this.maxEntries) this.cache.delete(this.cache.keys().next().value!);
     this.cache.set(session, { at: Date.now(), value: state });
     return state;
   }

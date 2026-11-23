@@ -13,6 +13,7 @@ import { SessionFacilitator } from "./session/facilitator";
 import { SessionServerScheme } from "./session/scheme";
 import { SCHEME } from "./session/protocol";
 import { ConfirmingFacilitator, rpcTxSource } from "./exact-confirm";
+import { scoped } from "./scoped-facilitator";
 import { DemoSession, mountDemo, solanaExplorer, type DemoMethod } from "./demo/demo";
 import { schemePayer, sessionPayer } from "./buyer/agent";
 import { USDC } from "./buyer/policy";
@@ -44,7 +45,7 @@ let sessionNetwork: string | undefined;
 if (process.env.EVM_PAY_TO) {
   // Circle's SDK bundles its own copy of the x402 types (resource.description required vs optional in
   // @x402/core 2.30); the wire format is the same, so only the static type needs bridging.
-  facilitators.push(new BatchFacilitatorClient({ url: env("CIRCLE_GATEWAY_URL", "https://gateway-api-testnet.circle.com") }) as unknown as FacilitatorClient);
+  facilitators.push(scoped(new BatchFacilitatorClient({ url: env("CIRCLE_GATEWAY_URL", "https://gateway-api-testnet.circle.com") }) as unknown as FacilitatorClient, [{ scheme: "exact", network: ARC_TESTNET }]));
   schemes.push([ARC_TESTNET, new GatewayEvmScheme()]);
   options.push({ scheme: "exact", network: ARC_TESTNET, payTo: process.env.EVM_PAY_TO, price, label: "USDC on Arc Testnet via Circle Gateway Nanopayments (gas-free, batched)" });
 }
@@ -53,7 +54,8 @@ if (process.env.EVM_PAY_TO) {
 if (process.env.SOLANA_PAY_TO) {
   // A "pending" settlement that lands anyway still serves the buyer (see src/exact-confirm.ts).
   const rpc = connect(env("SOLANA_RPC_URL", "https://api.devnet.solana.com")).rpc;
-  facilitators.push(new ConfirmingFacilitator(new HTTPFacilitatorClient({ url: env("SOLANA_FACILITATOR_URL", "https://x402.org/facilitator") }), rpcTxSource(rpc), { used: (tx) => !!ledger.payment(tx) }));
+  const exact = new ConfirmingFacilitator(new HTTPFacilitatorClient({ url: env("SOLANA_FACILITATOR_URL", "https://x402.org/facilitator") }), rpcTxSource(rpc), { used: (tx) => !!ledger.payment(tx) });
+  facilitators.push(scoped(exact, [{ scheme: "exact", network: SOLANA_DEVNET }]));
   schemes.push([SOLANA_DEVNET, new ExactSvmScheme()]);
   options.push({ scheme: "exact", network: SOLANA_DEVNET, payTo: process.env.SOLANA_PAY_TO, price, label: "USDC on Solana devnet via x402 exact (one transfer per call)" });
 }
@@ -64,7 +66,7 @@ if (process.env.SESSION_PAY_TO) {
   const network = await caip2(chain.rpc);
   sessionChain = chain;
   sessionNetwork = network;
-  facilitators.push(new SessionFacilitator({ network, reader: new RpcSessionReader(chain.rpc), ledger }));
+  facilitators.push(scoped(new SessionFacilitator({ network, reader: new RpcSessionReader(chain.rpc), ledger }), [{ scheme: SCHEME, network }]));
   schemes.push([network, new SessionServerScheme({ mint: address(env("SESSION_MINT")) })]);
   options.push({ scheme: SCHEME, network, payTo: process.env.SESSION_PAY_TO, price, label: "USDC via a prepaid pay_session on Solana (signed receipt per call, redeemed in batches)" });
 }
