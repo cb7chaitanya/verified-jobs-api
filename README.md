@@ -269,6 +269,10 @@ Dependency scans: `pnpm audit` reports no known vulnerabilities. `cargo audit` p
 - **Testnet only and unaudited,** including the Anchor program.
 - **Eligibility answers one question:** can someone based in India apply?
 - **USDC's freeze authority** can freeze any vault. Inherent to USDC; extension mints are refused, but plain freeze authorities can't be without refusing USDC.
-- **Upgrade authority.** The devnet program is upgradeable by its deploy key, which could replace the code and drain vaults. Before any mainnet use: a multisig with a timelock, or an immutable program.
+- **Upgrade authority (kept on purpose for devnet).** The program is upgradeable by one key, `CaBUb4ozaVpHRyrAfhYRrYWjMMCF7m9k3inuiYZ2wGCz`, which could replace the code and drain vaults. Check it yourself with `solana program show E5fA3t5xQkhjSiwrE5EzJ4wgr9fWSbTZzXsVxgKjGy3T --url devnet`. A buyer should only fund sessions they're willing to trust that key with. Before any mainnet deployment:
+  1. Create a [Squads](https://squads.so) multisig (e.g. 2-of-3, keys on separate devices) with a time lock on upgrades.
+  2. `solana program set-upgrade-authority <PROGRAM_ID> --new-upgrade-authority <SQUADS_VAULT> --skip-new-upgrade-authority-signer-check`, then confirm with `solana program show`.
+  3. Publish a verifiable build (`solana-verify`) so the deployed bytes can be matched to a commit.
+  4. Once the program is stable, consider `--final` (immutable). That is permanent: any later fix needs a new program ID.
 - **On-chain identity registration** is manual (see above).
 - **Build toolchain:** the Solana platform-tools cargo (1.84) can't read edition-2024 crates. `solana/.cargo/config.toml` resolves dependencies for Rust 1.84, and `blake3` is pinned to 1.5.5 in `Cargo.lock`.
