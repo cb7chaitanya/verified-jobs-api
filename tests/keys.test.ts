@@ -22,4 +22,19 @@ describe("keypair files", () => {
     expect(() => newKeypairFile(join(dir, "link.json"))).toThrow();
     expect(() => statSync(target)).toThrow(); // nothing was written through the link
   });
+
+  it("also read inline from an environment value, without echoing a bad one", () => {
+    const dir = mkdtempSync(join(tmpdir(), "vja-keys-"));
+    const k = newKeypairFile(join(dir, "b.json"));
+    expect(readKeypair(readFileSync(join(dir, "b.json"), "utf8"))).toEqual(k.secret);
+    const secretish = JSON.stringify([...k.secret.slice(0, 63)]); // one byte short
+    expect(() => readKeypair(secretish)).toThrow(/inline keypair/);
+    try {
+      readKeypair(secretish);
+    } catch (e) {
+      expect(String(e)).not.toContain(String(k.secret[0]) + "," + String(k.secret[1]));
+    }
+    expect(() => readKeypair("[1,2,")).toThrow(/inline keypair isn't valid JSON/);
+    expect(() => readKeypair(JSON.stringify(Array(64).fill(256)))).toThrow(/64-byte/);
+  });
 });

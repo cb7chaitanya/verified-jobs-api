@@ -3,10 +3,22 @@ import { generateKeyPairSync } from "node:crypto";
 import { createKeyPairSignerFromBytes, getAddressDecoder, type Address } from "@solana/kit";
 
 /** Read a Solana CLI keypair file (JSON array of 64 bytes). */
-export function readKeypair(path: string): Uint8Array {
-  const bytes = JSON.parse(readFileSync(path, "utf8")) as number[];
-  if (!Array.isArray(bytes) || bytes.length !== 64) throw new Error(`${path} isn't a 64-byte Solana keypair file`);
-  return Uint8Array.from(bytes);
+/**
+ * A Solana keypair from a file path, or inline as the JSON byte array itself (for hosts like Railway
+ * where secrets are environment variables). Errors never echo an inline value.
+ */
+export function readKeypair(pathOrJson: string): Uint8Array {
+  const inline = pathOrJson.trimStart().startsWith("[");
+  const label = inline ? "the inline keypair" : pathOrJson;
+  let bytes: unknown;
+  try {
+    bytes = JSON.parse(inline ? pathOrJson : readFileSync(pathOrJson, "utf8"));
+  } catch (e) {
+    if (!inline) throw e;
+    throw new Error(`${label} isn't valid JSON`);
+  }
+  if (!Array.isArray(bytes) || bytes.length !== 64 || !bytes.every((b) => Number.isInteger(b) && b >= 0 && b <= 255)) throw new Error(`${label} isn't a 64-byte Solana keypair`);
+  return Uint8Array.from(bytes as number[]);
 }
 
 export const signerFrom = (path: string) => createKeyPairSignerFromBytes(readKeypair(path));
