@@ -157,6 +157,34 @@
           }
         },
         {
+          "name": "pair",
+          "docs": [
+            "Created on the pair's first session; afterwards checked by seeds, owner and discriminator."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  97,
+                  105,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "buyer"
+              },
+              {
+                "kind": "account",
+                "path": "seller"
+              }
+            ]
+          }
+        },
+        {
           "name": "token_program"
         },
         {
@@ -240,6 +268,9 @@
         },
         {
           "name": "seller_token",
+          "docs": [
+            "Payouts go only to a token account the seller owns."
+          ],
           "writable": true
         },
         {
@@ -326,6 +357,19 @@
     }
   ],
   "accounts": [
+    {
+      "name": "PairState",
+      "discriminator": [
+        229,
+        212,
+        222,
+        222,
+        191,
+        128,
+        176,
+        235
+      ]
+    },
     {
       "name": "Session",
       "discriminator": [
@@ -469,9 +513,34 @@
       "code": 6014,
       "name": "UnsupportedMint",
       "msg": "Mints with Token-2022 extensions aren't supported"
+    },
+    {
+      "code": 6015,
+      "name": "NonceNotIncreasing",
+      "msg": "Session nonce must be higher than any this buyer has used with this seller"
     }
   ],
   "types": [
+    {
+      "name": "PairState",
+      "docs": [
+        "One per buyer/seller pair: the highest session nonce opened so far. Never closed, so a",
+        "session address (derived from the nonce) can't be reused once its session is closed."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "last_nonce",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
     {
       "name": "Session",
       "type": {

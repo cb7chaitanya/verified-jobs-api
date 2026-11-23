@@ -92,6 +92,11 @@ export async function sessionAddress(buyer: Address, seller: Address, nonce: big
   const [pda] = await getProgramDerivedAddress({ programAddress: program, seeds: [new TextEncoder().encode("session"), enc.encode(buyer), enc.encode(seller), u64(nonce)] });
   return pda;
 }
+/** The buyer/seller pair's nonce record: session nonces must keep increasing, so an address never comes back. */
+export async function pairAddress(buyer: Address, seller: Address, program = PROGRAM_ID): Promise<Address> {
+  const [pda] = await getProgramDerivedAddress({ programAddress: program, seeds: [new TextEncoder().encode("pair"), enc.encode(buyer), enc.encode(seller)] });
+  return pda;
+}
 export async function vaultAddress(session: Address, program = PROGRAM_ID): Promise<Address> {
   const [pda] = await getProgramDerivedAddress({ programAddress: program, seeds: [new TextEncoder().encode("vault"), enc.encode(session)] });
   return pda;
@@ -153,7 +158,7 @@ export function redeemInstruction(a: { seller: Address; session: Address; mint: 
 }
 
 export function openSessionInstruction(
-  a: { buyer: Address; seller: Address; mint: Address; buyerToken: Address; session: Address; vault: Address },
+  a: { buyer: Address; seller: Address; mint: Address; buyerToken: Address; session: Address; vault: Address; pair: Address },
   args: { nonce: bigint; deposit: bigint; expiresAt: bigint; signer: Address },
 ): Instruction {
   return {
@@ -165,6 +170,7 @@ export function openSessionInstruction(
       { address: a.buyerToken, role: AccountRole.WRITABLE },
       { address: a.session, role: AccountRole.WRITABLE },
       { address: a.vault, role: AccountRole.WRITABLE },
+      { address: a.pair, role: AccountRole.WRITABLE },
       { address: TOKEN_PROGRAM, role: AccountRole.READONLY },
       { address: SYSTEM_PROGRAM, role: AccountRole.READONLY },
     ],

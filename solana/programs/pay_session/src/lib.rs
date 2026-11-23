@@ -8,9 +8,12 @@
 //! whatever wasn't redeemed.
 //!
 //! Safety properties (each has a test in `tests/`):
-//! - Receipts are bound to this program, this session, this session's lifetime
-//!   (the slot it was opened in) and an amount, so they can't be replayed against
-//!   another session or deployment, or against the same address re-opened later.
+//! - Receipts are bound to this program, this session and an amount, so they can't
+//!   be replayed against another session or deployment.
+//! - A session address is never reused: each buyer/seller pair has a `PairState`
+//!   recording the highest nonce opened, and a new session needs a higher one. So
+//!   a closed session can't be re-opened and have its old receipts redeemed again.
+//!   Receipts also carry the slot the session was opened in, as a second layer.
 //! - `cumulative` only moves forward and can't exceed the deposit, so a receipt
 //!   can be redeemed at most once and the seller can never take more than was
 //!   deposited.
@@ -65,6 +68,11 @@ pub mod pay_session {
         require!(expires_at >= now.checked_add(MIN_DURATION_SECS).ok_or(SessionError::Overflow)?, SessionError::DurationTooShort);
         require!(expires_at <= now.checked_add(MAX_DURATION_SECS).ok_or(SessionError::Overflow)?, SessionError::DurationTooLong);
         require_keys_neq!(ctx.accounts.buyer.key(), ctx.accounts.seller.key(), SessionError::BuyerIsSeller);
+        // Session addresses are derived from the nonce; never let one come back after a close.
+        let pair = &mut ctx.accounts.pair;
+        require!(nonce > pair.last_nonce, SessionError::NonceNotIncreasing);
+        pair.last_nonce = nonce;
+        pair.bump = ctx.bumps.pair;
 
         let s = &mut ctx.accounts.session;
         s.buyer = ctx.accounts.buyer.key();
@@ -245,6 +253,15 @@ pub struct Session {
     pub opened_slot: u64,
 }
 
+/// One per buyer/seller pair: the highest session nonce opened so far. Never closed, so a
+/// session address (derived from the nonce) can't be reused once its session is closed.
+#[account]
+#[derive(InitSpace)]
+pub struct PairState {
+    pub last_nonce: u64,
+    pub bump: u8,
+}
+
 #[derive(Accounts)]
 #[instruction(nonce: u64)]
 pub struct OpenSession<'info> {
@@ -263,6 +280,9 @@ pub struct OpenSession<'info> {
     pub session: Account<'info, Session>,
     #[account(init, payer = buyer, seeds = [b"vault", session.key().as_ref()], bump, token::mint = mint, token::authority = session, token::token_program = token_program)]
     pub vault: InterfaceAccount<'info, TokenAccount>,
+    /// Created on the pair's first session; afterwards checked by seeds, owner and discriminator.
+    #[account(init_if_needed, payer = buyer, space = 8 + PairState::INIT_SPACE, seeds = [b"pair", buyer.key().as_ref(), seller.key().as_ref()], bump)]
+    pub pair: Account<'info, PairState>,
     pub token_program: Interface<'info, TokenInterface>,
     pub system_program: Program<'info, System>,
 }
@@ -373,4 +393,6 @@ pub enum SessionError {
     Overflow,
     #[msg("Mints with Token-2022 extensions aren't supported")]
     UnsupportedMint,
+    #[msg("Session nonce must be higher than any this buyer has used with this seller")]
+    NonceNotIncreasing,
 }

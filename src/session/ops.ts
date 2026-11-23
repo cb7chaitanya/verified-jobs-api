@@ -1,7 +1,7 @@
 import { findAssociatedTokenPda, getCreateAssociatedTokenIdempotentInstructionAsync, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import type { Address, KeyPairSigner } from "@solana/kit";
 import { getBase64Encoder } from "@solana/kit";
-import { closeSessionInstruction, decodeSession, ed25519Instruction, openSessionInstruction, PROGRAM_ID, receiptMessage, redeemInstruction, sessionAddress, vaultAddress } from "./protocol";
+import { closeSessionInstruction, decodeSession, ed25519Instruction, openSessionInstruction, pairAddress, PROGRAM_ID, receiptMessage, redeemInstruction, sessionAddress, vaultAddress } from "./protocol";
 import type { connect, RpcSessionReader } from "./chain";
 import type { Ledger } from "../ledger";
 import { log } from "../core/log";
@@ -13,13 +13,18 @@ export async function ata(owner: Address, mint: Address): Promise<Address> {
   return a;
 }
 
-/** Buyer: lock `deposit` for `seller`, payable by receipts signed with `signer` (an agent key) until `expiresAt`. */
+/**
+ * Buyer: lock `deposit` for `seller`, payable by receipts signed with `signer` (an agent key) until `expiresAt`.
+ * `nonce` must be higher than any this buyer used with this seller before (the default, the current
+ * time in ms, keeps increasing).
+ */
 export async function openSession(chain: Chain, a: { buyer: KeyPairSigner; seller: Address; mint: Address; signer: Address; deposit: bigint; expiresAt: bigint; nonce?: bigint }) {
   const nonce = a.nonce ?? BigInt(Date.now());
   const session = await sessionAddress(a.buyer.address, a.seller, nonce);
   const vault = await vaultAddress(session);
   const buyerToken = await ata(a.buyer.address, a.mint);
-  const tx = await chain.send(a.buyer, [openSessionInstruction({ buyer: a.buyer.address, seller: a.seller, mint: a.mint, buyerToken, session, vault }, { nonce, deposit: a.deposit, expiresAt: a.expiresAt, signer: a.signer })]);
+  const pair = await pairAddress(a.buyer.address, a.seller);
+  const tx = await chain.send(a.buyer, [openSessionInstruction({ buyer: a.buyer.address, seller: a.seller, mint: a.mint, buyerToken, session, vault, pair }, { nonce, deposit: a.deposit, expiresAt: a.expiresAt, signer: a.signer })]);
   // Receipts are bound to the slot the session was opened in, so read it back from the account.
   const { value } = await chain.rpc.getAccountInfo(session, { encoding: "base64", commitment: "confirmed" }).send();
   const state = value ? decodeSession(session, new Uint8Array(getBase64Encoder().encode(value.data[0]))) : null;

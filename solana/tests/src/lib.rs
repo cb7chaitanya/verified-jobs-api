@@ -102,6 +102,10 @@ fn setup() -> Env {
     Env { svm, buyer, seller, agent, mint: mint.pubkey(), buyer_token, seller_token }
 }
 
+fn pair_pda(buyer: &Pubkey, seller: &Pubkey) -> Pubkey {
+    Pubkey::find_program_address(&[b"pair", buyer.as_ref(), seller.as_ref()], &pay_session::ID).0
+}
+
 fn pdas(e: &Env, nonce: u64) -> (Pubkey, Pubkey) {
     let (session, _) = Pubkey::find_program_address(&[b"session", e.buyer.pubkey().as_ref(), e.seller.pubkey().as_ref(), &nonce.to_le_bytes()], &pay_session::ID);
     let (vault, _) = Pubkey::find_program_address(&[b"vault", session.as_ref()], &pay_session::ID);
@@ -120,6 +124,7 @@ fn open(e: &mut Env, nonce: u64, deposit: u64, duration: i64) -> Result<Pubkey, 
             buyer_token: e.buyer_token,
             session,
             vault,
+            pair: pair_pda(&e.buyer.pubkey(), &e.seller.pubkey()),
             token_program: spl_token::ID,
             system_program: solana_sdk::system_program::ID,
         }
@@ -348,7 +353,7 @@ fn sessions_must_leave_time_to_redeem() {
 }
 
 #[test]
-fn a_reopened_session_does_not_accept_receipts_from_its_earlier_lifetime() {
+fn a_closed_session_cannot_be_reopened_or_its_receipts_replayed() {
     // Same buyer, seller, nonce and agent key: the session PDA is the same address both times.
     let mut e = setup();
     let s = open(&mut e, 7, DEPOSIT, 2 * HOUR).unwrap();
@@ -360,15 +365,40 @@ fn a_reopened_session_does_not_accept_receipts_from_its_earlier_lifetime() {
     let close = [close_ix(&e, &s, &e.seller.pubkey())];
     send(&mut e.svm, &close, &seller, &[]).unwrap();
     next_slot(&mut e.svm);
-    let again = open(&mut e, 7, DEPOSIT, 2 * HOUR).unwrap();
-    assert_eq!(again, s);
-    // Replaying the first lifetime's signed receipt must not pay the seller twice.
+    // The address can't come back: the pair's nonce only moves forward, in the same slot or later.
+    assert_err(open(&mut e, 7, DEPOSIT, 2 * HOUR).map(|_| ()), "NonceNotIncreasing");
+    assert_err(open(&mut e, 6, DEPOSIT, 2 * HOUR).map(|_| ()), "NonceNotIncreasing");
     let replay = [old_ed, redeem_ix(&e, &s, &e.seller.pubkey(), 2 * USDC)];
-    assert_err(send(&mut e.svm, &replay, &seller, &[]), "WrongReceipt");
+    assert!(send(&mut e.svm, &replay, &seller, &[]).is_err());
     assert_eq!(balance(&e.svm, &e.seller_token), 2 * USDC);
-    // A receipt for the new lifetime still works.
-    redeem(&mut e, &s, USDC).unwrap();
+    // A higher nonce opens a fresh session at a different address.
+    let fresh = open(&mut e, 8, DEPOSIT, 2 * HOUR).unwrap();
+    assert_ne!(fresh, s);
+    redeem(&mut e, &fresh, USDC).unwrap();
     assert_eq!(balance(&e.svm, &e.seller_token), 3 * USDC);
+}
+
+#[test]
+fn receipts_also_carry_the_session_lifetime() {
+    // Defence in depth: a receipt signed for another opened_slot of the same address is refused.
+    let mut e = setup();
+    let s = open(&mut e, 9, DEPOSIT, HOUR).unwrap();
+    let slot = session_state(&e, &s).opened_slot;
+    let msg = receipt_message(&pay_session::ID, &s, slot + 1, USDC).to_vec();
+    let sig: [u8; 64] = e.agent.sign_message(&msg).as_ref().try_into().unwrap();
+    let ixs = [ed25519_ix(&e.agent.pubkey(), &sig, &msg, u16::MAX), redeem_ix(&e, &s, &e.seller.pubkey(), USDC)];
+    assert_err(seller_send(&mut e, &ixs), "WrongReceipt");
+}
+
+#[test]
+fn the_pair_nonce_never_moves_backwards_and_starts_above_zero() {
+    let mut e = setup();
+    assert_err(open(&mut e, 0, DEPOSIT, HOUR).map(|_| ()), "NonceNotIncreasing");
+    open(&mut e, 100, DEPOSIT, HOUR).unwrap();
+    assert_err(open(&mut e, 99, DEPOSIT, HOUR).map(|_| ()), "NonceNotIncreasing");
+    open(&mut e, 101, DEPOSIT, HOUR).unwrap();
+    let p = e.svm.get_account(&pair_pda(&e.buyer.pubkey(), &e.seller.pubkey())).unwrap();
+    assert_eq!(p.owner, pay_session::ID);
 }
 
 // --- Token-2022 mints, built directly as account data (no extra crates needed) ---
@@ -414,7 +444,7 @@ fn open_with_mint(e: &mut Env, nonce: u64, mint: Pubkey, buyer_token: Pubkey, to
     let (session, vault) = pdas(e, nonce);
     let ix = Instruction {
         program_id: pay_session::ID,
-        accounts: pay_session::accounts::OpenSession { buyer: e.buyer.pubkey(), seller: e.seller.pubkey(), mint, buyer_token, session, vault, token_program, system_program: solana_sdk::system_program::ID }
+        accounts: pay_session::accounts::OpenSession { buyer: e.buyer.pubkey(), seller: e.seller.pubkey(), mint, buyer_token, session, vault, pair: pair_pda(&e.buyer.pubkey(), &e.seller.pubkey()), token_program, system_program: solana_sdk::system_program::ID }
             .to_account_metas(None),
         data: pay_session::instruction::OpenSession { nonce, deposit: USDC, expires_at: now(&e.svm) + HOUR, signer: e.agent.pubkey() }.data(),
     };
@@ -773,7 +803,7 @@ fn zz_cu_summary() {
     let buyer = e.buyer.insecure_clone();
     let open_ix = Instruction {
         program_id: pay_session::ID,
-        accounts: pay_session::accounts::OpenSession { buyer: e.buyer.pubkey(), seller: e.seller.pubkey(), mint: e.mint, buyer_token: e.buyer_token, session, vault, token_program: spl_token::ID, system_program: solana_sdk::system_program::ID }.to_account_metas(None),
+        accounts: pay_session::accounts::OpenSession { buyer: e.buyer.pubkey(), seller: e.seller.pubkey(), mint: e.mint, buyer_token: e.buyer_token, session, vault, pair: pair_pda(&e.buyer.pubkey(), &e.seller.pubkey()), token_program: spl_token::ID, system_program: solana_sdk::system_program::ID }.to_account_metas(None),
         data: pay_session::instruction::OpenSession { nonce: 80, deposit: DEPOSIT, expires_at: now(&e.svm) + HOUR, signer: e.agent.pubkey() }.data(),
     };
     let open_cu = cu(&mut e.svm, &[open_ix], &buyer);
