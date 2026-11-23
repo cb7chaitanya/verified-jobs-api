@@ -61,13 +61,31 @@ export class ConfirmingFacilitator implements FacilitatorClient {
   /** Pending settlements this wrapper confirmed on-chain and turned into successes. */
   recovered = 0;
   private accepted = new Set<string>();
+  /** Transactions a request is currently confirming: claimed before the wait, so two requests can't both win. */
+  private inflight = new Set<string>();
   private pendingTx = new Map<string, string>();
 
   constructor(
     private inner: FacilitatorClient,
     private source: TxSource,
-    private opts: { timeoutMs?: number; intervalMs?: number; maxRemembered?: number } = {},
+    private opts: {
+      timeoutMs?: number;
+      intervalMs?: number;
+      maxRemembered?: number;
+      /** Durable "already paid for a call" check (the seller's payment ledger), so a restart forgets nothing. */
+      used?: (tx: string) => boolean;
+    } = {},
   ) {}
+
+  private alreadyUsed(tx: string) {
+    return this.accepted.has(tx) || this.inflight.has(tx) || (this.opts.used?.(tx) ?? false);
+  }
+
+  private markAccepted(tx: string) {
+    this.accepted.add(tx);
+    const max = this.opts.maxRemembered ?? 10_000;
+    while (this.accepted.size > max) this.accepted.delete(this.accepted.values().next().value!);
+  }
 
   verify(p: PaymentPayload, r: PaymentRequirements) {
     return this.inner.verify(p, r);
@@ -89,7 +107,12 @@ export class ConfirmingFacilitator implements FacilitatorClient {
       res = { success: false, errorReason: err.errorReason, errorMessage: err.errorMessage, payer: err.payer, transaction: err.transaction, network: r.network };
     }
     if (res.success) {
-      if (res.transaction) this.accepted.add(res.transaction);
+      // A facilitator can report success again for a transaction it already settled (it reconciles
+      // its own pending record), so a replayed payload must not buy a second call.
+      if (res.transaction && this.alreadyUsed(res.transaction)) {
+        return { success: false, errorReason: "duplicate_settlement", errorMessage: "This payment already paid for a call", transaction: res.transaction, network: r.network, payer: res.payer };
+      }
+      if (res.transaction) this.markAccepted(res.transaction);
       return res;
     }
     // A pending answer names the broadcast transaction. A later retry of the same payment may fail
@@ -97,10 +120,17 @@ export class ConfirmingFacilitator implements FacilitatorClient {
     if (res.errorReason === PENDING && res.transaction && key) this.remember(key, res.transaction);
     const tx = key ? this.pendingTx.get(key) : undefined;
     if (!tx || !key) return res;
-    const ok = await this.confirm(tx, key.split(","), r);
+    if (this.alreadyUsed(tx)) return res;
+    this.inflight.add(tx); // claim before awaiting, so concurrent requests for the same payment lose
+    let ok = false;
+    try {
+      ok = await this.confirm(tx, key.split(","), r);
+    } finally {
+      this.inflight.delete(tx);
+    }
     if (!ok) return res;
     this.pendingTx.delete(key);
-    this.accepted.add(tx);
+    this.markAccepted(tx);
     this.recovered++;
     log.info({ tx, reason: res.errorReason }, "exact settlement confirmed on-chain after a failed settle");
     return { success: true, transaction: tx, network: r.network, payer: res.payer };
@@ -113,7 +143,6 @@ export class ConfirmingFacilitator implements FacilitatorClient {
   }
 
   private async confirm(tx: string, buyerSigs: string[], r: PaymentRequirements): Promise<boolean> {
-    if (this.accepted.has(tx)) return false;
     const deadline = Date.now() + (this.opts.timeoutMs ?? 30_000);
     for (;;) {
       let landed: LandedTx | null = null;

@@ -53,7 +53,7 @@ if (process.env.EVM_PAY_TO) {
 if (process.env.SOLANA_PAY_TO) {
   // A "pending" settlement that lands anyway still serves the buyer (see src/exact-confirm.ts).
   const rpc = connect(env("SOLANA_RPC_URL", "https://api.devnet.solana.com")).rpc;
-  facilitators.push(new ConfirmingFacilitator(new HTTPFacilitatorClient({ url: env("SOLANA_FACILITATOR_URL", "https://x402.org/facilitator") }), rpcTxSource(rpc)));
+  facilitators.push(new ConfirmingFacilitator(new HTTPFacilitatorClient({ url: env("SOLANA_FACILITATOR_URL", "https://x402.org/facilitator") }), rpcTxSource(rpc), { used: (tx) => !!ledger.payment(tx) }));
   schemes.push([SOLANA_DEVNET, new ExactSvmScheme()]);
   options.push({ scheme: "exact", network: SOLANA_DEVNET, payTo: process.env.SOLANA_PAY_TO, price, label: "USDC on Solana devnet via x402 exact (one transfer per call)" });
 }

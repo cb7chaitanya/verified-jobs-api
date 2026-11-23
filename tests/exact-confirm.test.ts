@@ -127,6 +127,35 @@ describe("ConfirmingFacilitator", () => {
     expect(f.recovered).toBe(1);
   });
 
+  it("concurrent requests reusing one payment: exactly one is served", async () => {
+    const { payload, buyerSig } = await payment();
+    // First settle is pending; repeats of the same payload are duplicates. The tx lands after a few polls.
+    let reads = 0;
+    const slow: TxSource = { get: async () => (++reads > 2 ? landed(buyerSig) : null) };
+    const f = new ConfirmingFacilitator(inner(pending("T1"), { success: false, errorReason: "duplicate_settlement", transaction: "", network: NETWORK }), slow, { timeoutMs: 500, intervalMs: 5 });
+    const first = f.settle(payload, req);
+    await new Promise((r) => setTimeout(r, 1)); // T1 is remembered and being confirmed
+    const results = await Promise.all([first, f.settle(payload, req), f.settle(payload, req)]);
+    expect(results.filter((x) => x.success)).toHaveLength(1);
+  });
+
+  it("refuses a facilitator success for a transaction that already paid for a call", async () => {
+    const { payload, buyerSig } = await payment();
+    const ok: SettleResponse = { success: true, transaction: "T1", network: NETWORK };
+    const f = new ConfirmingFacilitator(inner(pending("T1"), ok), source({ T1: landed(buyerSig) }), fast);
+    expect((await f.settle(payload, req)).success).toBe(true); // recovered on-chain
+    expect(await f.settle(payload, req)).toMatchObject({ success: false, errorReason: "duplicate_settlement" }); // the facilitator later reconciles T1 too
+  });
+
+  it("checks the durable payment ledger, so a restart doesn't reopen a used transaction", async () => {
+    const { payload, buyerSig } = await payment();
+    const used = new Set(["T1"]);
+    const f = new ConfirmingFacilitator(inner(pending("T1")), source({ T1: landed(buyerSig) }), { ...fast, used: (tx) => used.has(tx) });
+    expect((await f.settle(payload, req)).success).toBe(false);
+    const g = new ConfirmingFacilitator(inner({ success: true, transaction: "T1", network: NETWORK }), source({}), { ...fast, used: (tx) => used.has(tx) });
+    expect(await g.settle(payload, req)).toMatchObject({ success: false, errorReason: "duplicate_settlement" });
+  });
+
   it("rethrows errors that aren't settlement responses", async () => {
     const { payload } = await payment();
     const f = new ConfirmingFacilitator(inner(new Error("network down")), source({}), fast);
