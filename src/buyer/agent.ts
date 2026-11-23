@@ -10,6 +10,12 @@ export interface Payer {
   create(x402Version: number, req: Requirement): Promise<Record<string, unknown>>;
   settled?(response: Record<string, unknown>): void;
   failed?(): void;
+  /**
+   * True when a payload that was handed over but not served can't cost more than once: the next
+   * call re-signs the same amount (session receipts). Otherwise (a signed transfer or an EIP-3009
+   * authorization) the service could still settle it, so it keeps counting against the daily cap.
+   */
+  reusesFailedPayment?: boolean;
 }
 
 /** Wrap an official x402 client scheme (Circle BatchEvmScheme, @x402/svm ExactSvmScheme, …). */
@@ -21,6 +27,7 @@ export function sessionPayer(network: string, p: SessionPayer): Payer {
   return {
     network,
     scheme: SESSION_SCHEME,
+    reusesFailedPayment: true,
     create: async (_v, req) => p.payload(req),
     settled: (r) => p.settled(typeof (r.extra as Record<string, unknown> | undefined)?.cumulative === "string" ? String((r.extra as Record<string, unknown>).cumulative) : undefined),
     failed: () => p.failed(),
@@ -58,7 +65,7 @@ export class BuyerAgent {
   /** Read the service's published prices once; later 402s may not ask for more. */
   async discover(serviceBase: string) {
     this.assertHost(serviceBase);
-    const m = (await (await this.fetchImpl(`${serviceBase.replace(/\/$/, "")}/v1`)).json()) as { payment?: { network: string; price: string }[] };
+    const m = (await (await this.fetchImpl(`${serviceBase.replace(/\/$/, "")}/v1`, { redirect: "manual" })).json()) as { payment?: { network: string; price: string }[] };
     for (const p of m.payment ?? []) {
       const usd = Number(String(p.price).replace(/^\$/, ""));
       if (Number.isFinite(usd) && usd > 0) this.quoted[p.network] = BigInt(Math.round(usd * 1_000_000)); // USDC, 6 decimals
@@ -73,7 +80,9 @@ export class BuyerAgent {
 
   async get(url: string): Promise<CallResult> {
     this.assertHost(url);
-    const first = await this.fetchImpl(url);
+    // Never follow redirects: they would carry the request, and later the payment, to a host the
+    // policy didn't allow.
+    const first = await this.fetchImpl(url, { redirect: "manual" });
     if (first.status !== 402) return { url, ok: first.ok, status: first.status, data: await first.json().catch(() => null) };
     const header = first.headers.get("payment-required");
     if (!header) return { url, ok: false, status: 402, error: "402 without PAYMENT-REQUIRED header" };
@@ -92,10 +101,23 @@ export class BuyerAgent {
     const req = decision.requirement;
     const payer = this.payers.find((p) => canPay(p, req))!;
     const hold = this.spend.reserve(at, req.network, BigInt(req.amount), url);
+    let delivered = false;
+    // A payment that reached the service but wasn't confirmed may still be settled by it: keep it
+    // counted unless the payer guarantees it can't cost more than once.
+    const unsettled = (status: number, data: unknown, error: string): CallResult => {
+      payer.failed?.();
+      if (delivered && !payer.reusesFailedPayment) {
+        this.spend.confirm(hold, "unsettled");
+        return { url, ok: false, status, data, error: `${error}; the signed payment was handed over, so it still counts toward the daily cap` };
+      }
+      this.spend.release(hold);
+      return { url, ok: false, status, data, error };
+    };
     try {
       const payload = await payer.create(required.x402Version, req);
       const sig = Buffer.from(JSON.stringify({ x402Version: required.x402Version, resource: required.resource, accepted: req, payload })).toString("base64");
-      const r = await this.fetchImpl(url, { headers: { "PAYMENT-SIGNATURE": sig } });
+      delivered = true;
+      const r = await this.fetchImpl(url, { headers: { "PAYMENT-SIGNATURE": sig }, redirect: "manual" });
       const data = await r.json().catch(() => null);
       const pr = r.headers.get("payment-response");
       const settle = pr ? (b64json(pr) as Record<string, unknown>) : null;
@@ -104,14 +126,9 @@ export class BuyerAgent {
         this.spend.confirm(hold, String(settle.transaction ?? ""));
         return { url, ok: true, status: r.status, data, paid: { network: req.network, amount: req.amount, receipt: String(settle.transaction ?? "") || null } };
       }
-      // Not served or not settled: nothing was charged, so release the reservation.
-      payer.failed?.();
-      this.spend.release(hold);
-      return { url, ok: false, status: r.status, data, error: `not served (HTTP ${r.status})` };
+      return unsettled(r.status, data, `not served (HTTP ${r.status})`);
     } catch (e) {
-      payer.failed?.();
-      this.spend.release(hold);
-      return { url, ok: false, status: 0, error: e instanceof Error ? e.message : String(e) };
+      return unsettled(0, undefined, e instanceof Error ? e.message : String(e));
     }
   }
 

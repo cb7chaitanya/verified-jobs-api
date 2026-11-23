@@ -138,20 +138,46 @@ describe("buyer agent", () => {
     expect(agent.spentToday()).toBe(1000n);
   });
 
-  it("a failed call releases the reservation and tells the payer, so nothing is counted as spent", async () => {
+  it("a failed call with a payment that can't cost twice (session receipt) releases the reservation", async () => {
     const s = service({ paid: () => ({ status: 502, body: { error: "UPSTREAM_UNAVAILABLE" } }) });
-    const arc = payer(ARC);
+    const arc = Object.assign(payer(ARC), { reusesFailedPayment: true });
     const agent = new BuyerAgent(policy, [arc], new SpendLog(), s.fetchImpl);
     const [r] = await agent.verifyAll(base, [POSTING]);
     expect(r).toMatchObject({ ok: false, status: 502 });
     expect([arc.failures, agent.spentToday()]).toEqual([1, 0n]);
   });
 
-  it("a 200 without a successful settlement isn't treated as paid", async () => {
+  it("a signed transfer handed over but not served keeps counting, so the daily cap still holds", async () => {
+    // The service could settle the authorization itself and answer 500 every time.
+    const s = service({ paid: () => ({ status: 500, body: { error: "INTERNAL" } }) });
+    const arc = payer(ARC);
+    const agent = new BuyerAgent(policy, [arc], new SpendLog(), s.fetchImpl);
+    await agent.discover(base);
+    const results = await agent.verifyAll(base, [POSTING, POSTING, POSTING, POSTING]);
+    expect(arc.created).toHaveLength(2); // cap 2500 at 1000 per call
+    expect(agent.spentToday()).toBe(2000n);
+    expect(results[0]!.error).toMatch(/still counts toward the daily cap/);
+    expect(results[2]).toMatchObject({ ok: false, refused: expect.stringMatching(/daily cap/) });
+  });
+
+  it("a 200 without a successful settlement isn't treated as paid, but the handed-over payment still counts", async () => {
     const s = service({ paid: () => ({ status: 200, body: { status: "OPEN" } }) });
     const agent = new BuyerAgent(policy, [payer(ARC)], new SpendLog(), s.fetchImpl);
     const [r] = await agent.verifyAll(base, [POSTING]);
     expect(r!.ok).toBe(false);
-    expect(agent.spentToday()).toBe(0n);
+    expect(agent.spentToday()).toBe(1000n);
+  });
+
+  it("never follows a redirect, so neither the request nor the payment leaves the allowed host", async () => {
+    const seen: { url: string; redirect?: string; paid: boolean }[] = [];
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      seen.push({ url: String(input), redirect: init?.redirect, paid: !!(init?.headers as Record<string, string> | undefined)?.["PAYMENT-SIGNATURE"] });
+      return new Response(null, { status: 302, headers: { location: "https://evil.example/collect" } });
+    }) as typeof fetch;
+    const agent = new BuyerAgent(policy, [payer(ARC)], new SpendLog(), fetchImpl);
+    const r = await agent.get(`${base}/v1/verify?url=${encodeURIComponent(POSTING)}`);
+    expect(r).toMatchObject({ ok: false, status: 302 });
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every((x) => x.redirect === "manual" && !x.paid && x.url.startsWith(base))).toBe(true);
   });
 });
