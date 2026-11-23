@@ -60,6 +60,8 @@ export class BuyerAgent {
     private readonly spend = new SpendLog(),
     private readonly fetchImpl: typeof fetch = fetch,
     private readonly now: () => number = Date.now,
+    /** Retries of the same signed payment when the seller reports its settlement as still pending. */
+    private readonly pending: { retries: number; delayMs: number } = { retries: 3, delayMs: 5_000 },
   ) {}
 
   /** Read the service's published prices once; later 402s may not ask for more. */
@@ -118,10 +120,19 @@ export class BuyerAgent {
       const payload = await payer.create(required.x402Version, req);
       const sig = Buffer.from(JSON.stringify({ x402Version: required.x402Version, resource: required.resource, accepted: req, payload })).toString("base64");
       delivered = true;
-      const r = await this.fetchImpl(url, { headers: { "PAYMENT-SIGNATURE": sig }, redirect: "manual" });
-      const data = await r.json().catch(() => null);
-      const pr = r.headers.get("payment-response");
-      const settle = pr ? (b64json(pr) as Record<string, unknown>) : null;
+      let r = await this.fetchImpl(url, { headers: { "PAYMENT-SIGNATURE": sig }, redirect: "manual" });
+      let data = await r.json().catch(() => null);
+      let pr = r.headers.get("payment-response");
+      let settle = pr ? (b64json(pr) as Record<string, unknown>) : null;
+      // The transfer was broadcast but not yet confirmed. Ask again with the *same* payment (never a
+      // new one): once it lands, the seller serves this call instead of keeping the money.
+      for (let i = 0; i < this.pending.retries && !(r.ok && settle?.success) && settle?.errorReason === "settlement_pending"; i++) {
+        await new Promise((res) => setTimeout(res, this.pending.delayMs));
+        r = await this.fetchImpl(url, { headers: { "PAYMENT-SIGNATURE": sig }, redirect: "manual" });
+        data = await r.json().catch(() => null);
+        pr = r.headers.get("payment-response");
+        settle = pr ? (b64json(pr) as Record<string, unknown>) : null;
+      }
       if (r.ok && settle?.success) {
         payer.settled?.(settle);
         this.spend.confirm(hold, String(settle.transaction ?? ""));

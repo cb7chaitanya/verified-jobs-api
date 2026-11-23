@@ -156,6 +156,21 @@ describe("ConfirmingFacilitator", () => {
     expect(await g.settle(payload, req)).toMatchObject({ success: false, errorReason: "duplicate_settlement" });
   });
 
+  it("lets a retried payment through verify while its pending transaction is tracked, and serves it once it lands", async () => {
+    const { payload, buyerSig } = await payment();
+    const chain: Record<string, LandedTx> = {};
+    const refusing: FacilitatorClient & { calls: number } = { ...inner(pending("T1"), { success: false, errorReason: "duplicate_settlement", transaction: "", network: NETWORK }), async verify() {
+      return { isValid: false, invalidReason: "transaction_simulation_failed" };
+    } };
+    const f = new ConfirmingFacilitator(refusing, source(chain), fast);
+    expect(await f.verify(payload, req)).toMatchObject({ isValid: false }); // nothing tracked yet
+    expect((await f.settle(payload, req)).success).toBe(false); // pending, not landed within the window
+    expect(await f.verify(payload, req)).toMatchObject({ isValid: true }); // the retry gets through verify
+    chain.T1 = landed(buyerSig);
+    expect(await f.settle(payload, req)).toMatchObject({ success: true, transaction: "T1" });
+    expect(await f.verify(payload, req)).toMatchObject({ isValid: false }); // used: no more passes
+  });
+
   it("rethrows errors that aren't settlement responses", async () => {
     const { payload } = await payment();
     const f = new ConfirmingFacilitator(inner(new Error("network down")), source({}), fast);

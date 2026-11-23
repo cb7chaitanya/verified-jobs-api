@@ -87,8 +87,26 @@ export class ConfirmingFacilitator implements FacilitatorClient {
     while (this.accepted.size > max) this.accepted.delete(this.accepted.values().next().value!);
   }
 
-  verify(p: PaymentPayload, r: PaymentRequirements) {
-    return this.inner.verify(p, r);
+  /**
+   * A buyer whose settlement came back pending retries with the same signed payment. By then the
+   * transfer may already have landed, so the facilitator's simulation-based verify refuses it. If
+   * this payment's broadcast transaction is being tracked (and hasn't paid for a call), let it
+   * through: settle() still serves it only after confirming that transaction on-chain.
+   */
+  async verify(p: PaymentPayload, r: PaymentRequirements) {
+    const tracked = () => {
+      const key = buyerSignatures(p).join(",");
+      const tx = key ? this.pendingTx.get(key) : undefined;
+      return tx && !this.alreadyUsed(tx) ? tx : null;
+    };
+    try {
+      const res = await this.inner.verify(p, r);
+      if (res.isValid || !tracked()) return res;
+      return { isValid: true, payer: res.payer };
+    } catch (e) {
+      if (tracked()) return { isValid: true };
+      throw e;
+    }
   }
 
   getSupported() {

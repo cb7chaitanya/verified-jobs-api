@@ -173,6 +173,23 @@ describe("buyer agent", () => {
     expect(agent.spentToday()).toBe(1000n);
   });
 
+  it("a settlement reported pending is retried with the same payment until it's served", async () => {
+    let calls = 0;
+    const sigs = new Set<string>();
+    const s = service({
+      paid: (h) => {
+        sigs.add(JSON.stringify(h));
+        return ++calls < 3 ? { status: 402, body: {}, settle: { success: false, errorReason: "settlement_pending", transaction: "T1" } } : { status: 200, body: { status: "OPEN" }, settle: { success: true, transaction: "T1" } };
+      },
+    });
+    const arc = payer(ARC);
+    const agent = new BuyerAgent(policy, [arc], new SpendLog(), s.fetchImpl, Date.now, { retries: 3, delayMs: 1 });
+    const [r] = await agent.verifyAll(base, [POSTING]);
+    expect(r).toMatchObject({ ok: true, paid: { receipt: "T1" } });
+    expect([arc.created.length, sigs.size, calls]).toEqual([1, 1, 3]); // one payment, sent three times
+    expect(agent.spentToday()).toBe(1000n);
+  });
+
   it("never follows a redirect, so neither the request nor the payment leaves the allowed host", async () => {
     const seen: { url: string; redirect?: string; paid: boolean }[] = [];
     const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
