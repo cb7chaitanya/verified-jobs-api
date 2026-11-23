@@ -172,7 +172,7 @@ let exactFees = 0n;
 for (const s of exact.receipts) exactFees += await fee(s);
 
 // --- pay_session ---
-const agentKey = newKeypairFile(join(DIR, "agent.json"));
+const agentKey = newKeypairFile(join(DIR, `agent-${Date.now()}.json`));
 const t0 = performance.now();
 const opened = await openSession(chain, { buyer, seller: seller.address, mint, signer: agentKey.address, deposit: BigInt(CALLS) * PRICE + PRICE, expiresAt: BigInt(Math.floor(Date.now() / 1000) + 3600) });
 const openMs = performance.now() - t0;

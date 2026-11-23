@@ -181,7 +181,7 @@ const count = (xs: Outcome[]) => xs.reduce<Record<string, number>>((m, o) => ((m
 const exactCharged = (afterExact - start) / PRICE;
 
 // --- pay_session ---
-const agentKey = newKeypairFile(join(DIR, "devnet-agent.json"));
+const agentKey = newKeypairFile(join(DIR, `devnet-agent-${Date.now()}.json`));
 const t0 = performance.now();
 const opened = await openSession(chain, { buyer, seller: seller.address, mint: MINT, signer: agentKey.address, deposit, expiresAt: BigInt(Math.floor(Date.now() / 1000) + 3600) });
 const openMs = performance.now() - t0;

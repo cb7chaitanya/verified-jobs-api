@@ -11,14 +11,28 @@ export function readKeypair(path: string): Uint8Array {
 
 export const signerFrom = (path: string) => createKeyPairSignerFromBytes(readKeypair(path));
 
-/** Create a fresh keypair file (mode 0600) and return its address. */
-export function newKeypairFile(path: string): { address: Address; secret: Uint8Array } {
+/** A fresh ed25519 keypair in Solana's 64-byte layout (seed || public key), kept in memory. */
+export function newKeypair(): { address: Address; secret: Uint8Array } {
   const { privateKey, publicKey } = generateKeyPairSync("ed25519");
   const seed = privateKey.export({ format: "der", type: "pkcs8" }).subarray(16);
   const pub = publicKey.export({ format: "der", type: "spki" }).subarray(12);
-  const secret = new Uint8Array(Buffer.concat([seed, pub]));
-  writeFileSync(path, JSON.stringify([...secret]), { mode: 0o600 });
-  return { address: getAddressDecoder().decode(new Uint8Array(pub)), secret };
+  return { address: getAddressDecoder().decode(new Uint8Array(pub)), secret: new Uint8Array(Buffer.concat([seed, pub])) };
+}
+
+/**
+ * Write a keypair file readable only by its owner. `wx` refuses to overwrite or follow anything
+ * already at `path` (an existing file or a planted symlink), so the key can't land somewhere else
+ * or inherit looser permissions.
+ */
+export function writeKeypairFile(path: string, secret: Uint8Array) {
+  writeFileSync(path, JSON.stringify([...secret]), { mode: 0o600, flag: "wx" });
+}
+
+/** Create a fresh keypair file (mode 0600, never overwriting) and return its address. */
+export function newKeypairFile(path: string): { address: Address; secret: Uint8Array } {
+  const k = newKeypair();
+  writeKeypairFile(path, k.secret);
+  return k;
 }
 
 /** "1.5" → 1_500_000n (USDC, 6 decimals). */

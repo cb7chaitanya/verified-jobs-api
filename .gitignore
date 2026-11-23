@@ -12,3 +12,9 @@ policy.json
 solana/target/
 solana/test-ledger/
 solana/.anchor/
+# Key material anywhere in the tree, not just under data/ (agent, buyer, seller, deploy keys)
+*.pem
+*.key
+*keypair*.json
+*-signer-*.json
+agent-*.json
