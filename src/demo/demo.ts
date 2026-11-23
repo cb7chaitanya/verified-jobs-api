@@ -95,6 +95,11 @@ export interface DemoOptions {
   spendDb?: string;
   /** The page's public origin (PUBLIC_URL). When set, POSTs must come from exactly this origin. */
   publicOrigin?: string;
+  /**
+   * Other sites allowed to drive the demo (the web app, e.g. https://verified-jobs.vercel.app).
+   * They get CORS access to /demo/* and their POSTs are accepted like the page's own.
+   */
+  allowedOrigins?: string[];
   fetchImpl?: typeof fetch;
 }
 
@@ -134,6 +139,7 @@ export function mountDemo(app: Express, o: DemoOptions) {
   const doFetch = o.fetchImpl ?? fetch;
 
   const expectedOrigin = o.publicOrigin ? new URL(o.publicOrigin).origin : null;
+  const allowed = new Set((o.allowedOrigins ?? []).map((x) => new URL(x).origin));
   /**
    * POSTs must carry the page's own Origin (browsers always send it on fetch POSTs), so another
    * site can't make a visitor's browser spend the demo's funds. Compared with PUBLIC_URL when it's
@@ -144,6 +150,7 @@ export function mountDemo(app: Express, o: DemoOptions) {
     if (!origin) return false;
     try {
       const u = new URL(origin);
+      if (allowed.has(u.origin)) return true;
       return expectedOrigin ? u.origin === expectedOrigin : u.host === req.get("host");
     } catch {
       return false;
@@ -158,6 +165,22 @@ export function mountDemo(app: Express, o: DemoOptions) {
     return true;
   };
   let redeeming: Promise<unknown> | null = null;
+
+  // CORS for the allowed web app only. Every POST still passes sameOrigin(), so CORS just lets the
+  // browser read the streamed answer; it grants nothing a direct (non-browser) caller didn't have.
+  app.use("/demo", (req, res, next) => {
+    const origin = req.get("origin");
+    let o2: string | null = null;
+    try {
+      o2 = origin ? new URL(origin).origin : null;
+    } catch {}
+    if (o2 && allowed.has(o2)) {
+      res.set({ "Access-Control-Allow-Origin": o2, "Access-Control-Allow-Methods": "GET, POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type", "Access-Control-Max-Age": "600" });
+    }
+    res.vary("Origin");
+    if (req.method === "OPTIONS") return void res.status(o2 && allowed.has(o2) ? 204 : 403).end();
+    next();
+  });
 
   app.get("/", (_req, res) => {
     // The page spends funds on click, so it must not be framed by another site.

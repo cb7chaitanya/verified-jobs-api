@@ -42,7 +42,7 @@ const OPEN: Verification = {
 let server: Server | undefined;
 afterEach(() => server?.close());
 
-async function start(o: { dailyCap?: bigint; rate?: { max: number; windowMs: number }; publicOrigin?: string; failing?: boolean; redeem?: boolean } = {}) {
+async function start(o: { dailyCap?: bigint; rate?: { max: number; windowMs: number }; publicOrigin?: string; allowedOrigins?: string[]; failing?: boolean; redeem?: boolean } = {}) {
   const fac = new FakeFacilitator();
   const rs = new x402ResourceServer(fac).register(SOL, new ExactSvmScheme());
   const app = createApp({ verify: async () => OPEN, payments: { server: rs, options: [{ scheme: "exact", network: SOL, payTo: PAY_TO, price: "$0.001", label: "test" }] }, cacheMs: 0 });
@@ -63,7 +63,7 @@ async function start(o: { dailyCap?: bigint; rate?: { max: number; windowMs: num
   ledger.advance("11111111111111111111111111111112", 1n, null, 1000n, new Uint8Array(64));
   const rpc = { getAccountInfo: () => ({ send: () => (rpcReads++, new Promise((r) => setTimeout(() => r({ value: null }), 50))) }) };
   const redeem = o.redeem ? { chain: { rpc } as never, ledger, seller: {} as never } : undefined;
-  mountDemo(app, { selfBase: base, price: 1000n, methods: [exact], dailyCap: o.dailyCap ?? 1_000_000n, resultsDir: results, rate: o.rate, publicOrigin: o.publicOrigin, redeem });
+  mountDemo(app, { selfBase: base, price: 1000n, methods: [exact], dailyCap: o.dailyCap ?? 1_000_000n, resultsDir: results, rate: o.rate, publicOrigin: o.publicOrigin, allowedOrigins: o.allowedOrigins, redeem });
   return { fac, base, reads: () => rpcReads };
 }
 
@@ -149,5 +149,22 @@ describe("demo page", () => {
     expect(reads()).toBe(1);
     expect((await post()).status).toBe(429); // the window is used up
     expect((await run(base, { url: POSTING, method: "exact" })).status).toBe(429); // shared with paid runs
+  });
+
+  it("lets the configured web app drive it over CORS, and nobody else", async () => {
+    const web = "https://verified-jobs.example";
+    const { base, fac } = await start({ publicOrigin: "https://api.example", allowedOrigins: [web] });
+    const pre = await fetch(`${base}/demo/verify`, { method: "OPTIONS", headers: { origin: web, "access-control-request-method": "POST" } });
+    expect(pre.status).toBe(204);
+    expect(pre.headers.get("access-control-allow-origin")).toBe(web);
+    const cfg = await fetch(`${base}/demo/config`, { headers: { origin: web } });
+    expect(cfg.headers.get("access-control-allow-origin")).toBe(web);
+    expect((await run(base, { url: POSTING, method: "exact" }, { origin: web })).status).toBe(200);
+    // Another site gets no CORS grant and its POSTs are refused.
+    const evil = "https://evil.example";
+    expect((await fetch(`${base}/demo/verify`, { method: "OPTIONS", headers: { origin: evil } })).status).toBe(403);
+    expect((await fetch(`${base}/demo/config`, { headers: { origin: evil } })).headers.get("access-control-allow-origin")).toBeNull();
+    expect((await run(base, { url: POSTING, method: "exact" }, { origin: evil })).status).toBe(403);
+    expect(fac.settles).toBe(1);
   });
 });
