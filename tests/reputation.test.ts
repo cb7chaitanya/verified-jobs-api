@@ -80,6 +80,27 @@ describe("payment-backed reviews", () => {
     expect(reputation(ledger).reviews).toBe(0);
   });
 
+  it("binds the proof to the recorded payment, the review to this service, and the stored body to the signed bytes", async () => {
+    const ledger = seeded();
+    const sign = (b: Uint8Array) => evm.signMessage({ message: { raw: b } });
+    const other = privateKeyToAccount(generatePrivateKey()).address;
+    const wrongFrom = enc(feedback({}, { fromAddress: other }));
+    await expect(submitReview(ledger, ID, wrongFrom, await sign(wrongFrom))).rejects.toMatchObject({ code: "NO_SUCH_PAYMENT" });
+    const wrongChain = enc(feedback({}, { chainId: "eip155:1" }));
+    await expect(submitReview(ledger, ID, wrongChain, await sign(wrongChain))).rejects.toMatchObject({ code: "NO_SUCH_PAYMENT" });
+    // Unregistered service: the review must name this service's endpoint.
+    const unregistered = { ...ID, registrations: [] };
+    const elsewhere = enc(feedback({ endpoint: "https://other.example/v1" }));
+    await expect(submitReview(ledger, unregistered, elsewhere, await sign(elsewhere))).rejects.toMatchObject({ code: "INVALID" });
+    const here = enc(feedback({ endpoint: "https://api.example/v1" }));
+    expect(await submitReview(ledger, unregistered, here, await sign(here))).toMatchObject({ score: 95 });
+    // Invalid UTF-8 and repeated keys are refused (they'd let the stored or re-parsed body differ from what was signed).
+    const badUtf8 = new Uint8Array([...enc(feedback({}, { txHash: "0xpaid2" })).slice(0, -1), 0xff, 0x7d]);
+    await expect(submitReview(ledger, ID, badUtf8, await sign(badUtf8))).rejects.toMatchObject({ code: "INVALID" });
+    const dup = new TextEncoder().encode(JSON.stringify(feedback({}, { txHash: "0xpaid2" })).replace('"value":95', '"value":95,"value":5'));
+    await expect(submitReview(ledger, ID, dup, await sign(dup))).rejects.toMatchObject({ code: "INVALID" });
+  });
+
   it("a Solana session payment can be reviewed by its agent key (ed25519)", async () => {
     const { privateKey, publicKey } = generateKeyPairSync("ed25519");
     const secret = new Uint8Array(Buffer.concat([privateKey.export({ format: "der", type: "pkcs8" }).subarray(16), publicKey.export({ format: "der", type: "spki" }).subarray(12)]));
@@ -123,7 +144,7 @@ describe("over HTTP", () => {
     expect((await fetch(url, { headers: { "PAYMENT-SIGNATURE": header } })).status).toBe(200);
     expect(ledger.payment("5onchainTx")).toMatchObject({ payer: evm.address, payTo: PAY_TO, amount: "1000" });
 
-    const body = JSON.stringify(feedback({ agentRegistry: "any", agentId: "1" }, { toAddress: PAY_TO, txHash: "5onchainTx" }));
+    const body = JSON.stringify(feedback({ agentRegistry: "any", agentId: "1", endpoint: "http://localhost:3000/v1" }, { toAddress: PAY_TO, chainId: SOL, txHash: "5onchainTx" }));
     const post = (sig: string) => fetch(`${base}/v1/feedback`, { method: "POST", headers: { "content-type": "application/json", "x-feedback-signature": sig }, body });
     const sig = await evm.signMessage({ message: { raw: new TextEncoder().encode(body) } });
     expect((await post(sig)).status).toBe(201);
