@@ -19,7 +19,8 @@ export class Ledger {
         accepted   TEXT NOT NULL,          -- highest cumulative amount accepted (atomic units, decimal)
         signature  BLOB NOT NULL,          -- buyer's signature over that amount
         redeemed   TEXT NOT NULL DEFAULT '0',
-        updated_at INTEGER NOT NULL
+        updated_at INTEGER NOT NULL,
+        opened_slot TEXT                   -- lifetime of the session address these receipts belong to
       );
       CREATE TABLE IF NOT EXISTS payments (
         id         TEXT PRIMARY KEY,       -- on-chain tx / settlement id / session receipt id
@@ -41,34 +42,54 @@ export class Ledger {
         created_at INTEGER NOT NULL
       );
     `);
+    // Additive migration for ledgers created before receipts were bound to a session lifetime.
+    const cols = this.db.prepare("PRAGMA table_info(session_receipts)").all() as { name: string }[];
+    if (!cols.some((c) => c.name === "opened_slot")) this.db.exec("ALTER TABLE session_receipts ADD COLUMN opened_slot TEXT");
   }
 
-  accepted(session: string): { accepted: bigint; redeemed: bigint } | null {
-    const r = this.db.prepare("SELECT accepted, redeemed FROM session_receipts WHERE session = ?").get(session) as { accepted: string; redeemed: string } | undefined;
+  /** The latest receipt accepted for this lifetime of the session (rows from an earlier lifetime don't count). */
+  accepted(session: string, openedSlot: bigint): { accepted: bigint; redeemed: bigint } | null {
+    const r = this.db.prepare("SELECT accepted, redeemed FROM session_receipts WHERE session = ? AND opened_slot = ?").get(session, openedSlot.toString()) as { accepted: string; redeemed: string } | undefined;
     return r ? { accepted: BigInt(r.accepted), redeemed: BigInt(r.redeemed) } : null;
   }
 
-  /** Compare-and-set: move a session from `expected` (null = never seen) to `next`. False if someone got there first. */
-  advance(session: string, expected: bigint | null, next: bigint, signature: Uint8Array, now = Date.now()): boolean {
+  /**
+   * Compare-and-set: move a session lifetime from `expected` (null = never seen) to `next`. False if
+   * someone got there first. A row left by an earlier lifetime of the same address is replaced.
+   */
+  advance(session: string, openedSlot: bigint, expected: bigint | null, next: bigint, signature: Uint8Array, now = Date.now()): boolean {
+    const slot = openedSlot.toString();
     if (expected === null) {
-      const r = this.db.prepare("INSERT INTO session_receipts (session, accepted, signature, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(session) DO NOTHING").run(session, next.toString(), signature, now);
+      const r = this.db
+        .prepare(
+          "INSERT INTO session_receipts (session, accepted, signature, updated_at, opened_slot) VALUES (?, ?, ?, ?, ?) " +
+            "ON CONFLICT(session) DO UPDATE SET accepted = excluded.accepted, signature = excluded.signature, redeemed = '0', updated_at = excluded.updated_at, opened_slot = excluded.opened_slot " +
+            "WHERE session_receipts.opened_slot IS NOT excluded.opened_slot",
+        )
+        .run(session, next.toString(), signature, now, slot);
       return r.changes === 1;
     }
-    const r = this.db.prepare("UPDATE session_receipts SET accepted = ?, signature = ?, updated_at = ? WHERE session = ? AND accepted = ?").run(next.toString(), signature, now, session, expected.toString());
+    const r = this.db.prepare("UPDATE session_receipts SET accepted = ?, signature = ?, updated_at = ? WHERE session = ? AND opened_slot = ? AND accepted = ?").run(next.toString(), signature, now, session, slot, expected.toString());
     return r.changes === 1;
   }
 
-  /** Sessions holding receipts not yet redeemed on-chain. */
-  unredeemed(): { session: string; accepted: bigint; redeemed: bigint; signature: Uint8Array }[] {
-    return (this.db.prepare("SELECT session, accepted, redeemed, signature FROM session_receipts").all() as { session: string; accepted: string; redeemed: string; signature: Uint8Array }[])
-      .map((r) => ({ session: r.session, accepted: BigInt(r.accepted), redeemed: BigInt(r.redeemed), signature: new Uint8Array(r.signature) }))
+  /** Session lifetimes holding receipts not yet redeemed on-chain. */
+  unredeemed(): { session: string; openedSlot: bigint | null; accepted: bigint; redeemed: bigint; signature: Uint8Array }[] {
+    return (this.db.prepare("SELECT session, opened_slot, accepted, redeemed, signature FROM session_receipts").all() as { session: string; opened_slot: string | null; accepted: string; redeemed: string; signature: Uint8Array }[])
+      .map((r) => ({ session: r.session, openedSlot: r.opened_slot === null ? null : BigInt(r.opened_slot), accepted: BigInt(r.accepted), redeemed: BigInt(r.redeemed), signature: new Uint8Array(r.signature) }))
       .filter((r) => r.accepted > r.redeemed);
   }
 
-  /** Record what the chain shows as redeemed; never moves backwards. */
-  markRedeemed(session: string, upTo: bigint) {
-    const cur = this.accepted(session);
-    if (cur && upTo > cur.redeemed) this.db.prepare("UPDATE session_receipts SET redeemed = ? WHERE session = ? AND redeemed = ?").run(upTo.toString(), session, cur.redeemed.toString());
+  /** Record what the chain shows as redeemed for this lifetime; never moves backwards. */
+  markRedeemed(session: string, openedSlot: bigint | null, upTo: bigint) {
+    const slot = openedSlot === null ? null : openedSlot.toString();
+    const r = this.db.prepare("SELECT redeemed FROM session_receipts WHERE session = ? AND opened_slot IS ?").get(session, slot) as { redeemed: string } | undefined;
+    if (r && upTo > BigInt(r.redeemed)) this.db.prepare("UPDATE session_receipts SET redeemed = ? WHERE session = ? AND opened_slot IS ? AND redeemed = ?").run(upTo.toString(), session, slot, r.redeemed);
+  }
+
+  /** Stop tracking a lifetime that no longer exists on-chain (closed, or replaced by a re-open). */
+  retire(session: string, openedSlot: bigint | null) {
+    this.db.prepare("UPDATE session_receipts SET redeemed = accepted WHERE session = ? AND opened_slot IS ?").run(session, openedSlot === null ? null : openedSlot.toString());
   }
 
   recordPayment(p: { id: string; scheme: string; network: string; payer: string; signer?: string | null; payTo: string; amount: string; resource?: string | null }, now = Date.now()) {

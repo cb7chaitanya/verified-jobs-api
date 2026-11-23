@@ -64,7 +64,7 @@ export class DemoSession {
     const key = newKeypairFile(join(this.dir, `demo-session-signer-${Date.now()}.json`));
     const t = performance.now();
     const opened = await openSession(this.chain, { buyer: this.buyer, seller: this.seller, mint: this.mint, signer: key.address, deposit: this.deposit, expiresAt: BigInt(Math.floor(Date.now() / 1000) + 24 * 3600) });
-    this.payer = new SessionPayer({ address: opened.session, seller: this.seller, mint: this.mint, deposit: this.deposit }, new ReceiptSigner(key.secret));
+    this.payer = new SessionPayer({ address: opened.session, seller: this.seller, mint: this.mint, deposit: this.deposit, openedSlot: opened.openedSlot }, new ReceiptSigner(key.secret));
     emit({ type: "session-opened", session: opened.session, tx: opened.tx, explorer: solanaExplorer(opened.tx), ms: Math.round(performance.now() - t), deposit: this.deposit.toString() });
     return this.payer;
   }

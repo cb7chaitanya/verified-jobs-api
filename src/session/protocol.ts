@@ -14,20 +14,25 @@ export const SYSTEM_PROGRAM = address("11111111111111111111111111111111");
 export const INSTRUCTIONS_SYSVAR = address("Sysvar1nstructions1111111111111111111111111");
 export const ED25519_PROGRAM = address("Ed25519SigVerify111111111111111111111111111");
 
-const DOMAIN = new TextEncoder().encode("x402-session-v1\0");
+const DOMAIN = new TextEncoder().encode("x402-session-v2\0");
 const enc = getAddressEncoder();
 const dec = getAddressDecoder();
 
 const disc = (name: string) => Uint8Array.from(idl.instructions.find((i) => i.name === name)!.discriminator);
 const SESSION_DISCRIMINATOR = Uint8Array.from(idl.accounts.find((a) => a.name === "Session")!.discriminator);
 
-/** domain(16) || program(32) || session(32) || cumulative u64 LE (8) = 88 bytes. */
-export function receiptMessage(program: Address, session: Address, cumulative: bigint): Uint8Array {
-  const m = new Uint8Array(88);
+/**
+ * domain(16) || program(32) || session(32) || openedSlot u64 LE (8) || cumulative u64 LE (8) = 96 bytes.
+ * `openedSlot` pins the receipt to one lifetime of the session address (it can be closed and re-opened).
+ */
+export function receiptMessage(program: Address, session: Address, openedSlot: bigint, cumulative: bigint): Uint8Array {
+  const m = new Uint8Array(96);
   m.set(DOMAIN, 0);
   m.set(enc.encode(program), 16);
   m.set(enc.encode(session), 48);
-  new DataView(m.buffer).setBigUint64(80, cumulative, true);
+  const dv = new DataView(m.buffer);
+  dv.setBigUint64(80, openedSlot, true);
+  dv.setBigUint64(88, cumulative, true);
   return m;
 }
 
@@ -41,11 +46,13 @@ export interface SessionState {
   deposit: bigint;
   redeemed: bigint;
   expiresAt: number; // unix seconds
+  /** Slot the session was opened in; identifies this lifetime of the address. */
+  openedSlot: bigint;
 }
 
 /** Decode a Session account (8-byte discriminator + fields in declaration order). Returns null if it isn't one. */
 export function decodeSession(addr: Address, data: Uint8Array): SessionState | null {
-  if (data.length < 8 + 32 * 4 + 8 * 4 + 2) return null;
+  if (data.length < 8 + 32 * 4 + 8 * 4 + 2 + 8) return null;
   if (!SESSION_DISCRIMINATOR.every((b, i) => data[i] === b)) return null;
   const dv = new DataView(data.buffer, data.byteOffset, data.byteLength);
   const key = (o: number) => dec.decode(data.subarray(o, o + 32));
@@ -59,6 +66,8 @@ export function decodeSession(addr: Address, data: Uint8Array): SessionState | n
     deposit: dv.getBigUint64(144, true),
     redeemed: dv.getBigUint64(152, true),
     expiresAt: Number(dv.getBigInt64(160, true)),
+    // bump (168) and vault_bump (169) follow.
+    openedSlot: dv.getBigUint64(170, true),
   };
 }
 

@@ -26,6 +26,8 @@ export interface SessionFile {
   rpcUrl: string;
   /** Highest receipt total the seller confirmed (kept up to date by the buyer agent). */
   committed: string;
+  /** Slot the session was opened in; receipts are bound to it. */
+  openedSlot: string;
 }
 
 const rpcUrl = process.env.SESSION_RPC_URL ?? "https://api.devnet.solana.com";
@@ -45,14 +47,14 @@ if (cmd === "open") {
   const r = await openSession(chain, { buyer, seller, mint, signer: agent.address, deposit, expiresAt });
   const agentKeyPath = join(dirname(out), `agent-${r.session}.json`);
   renameSync(tmpKey, agentKeyPath);
-  const file: SessionFile = { session: r.session, buyer: buyer.address, seller, mint, deposit: deposit.toString(), expiresAt: Number(expiresAt), agentKeyPath, rpcUrl, committed: "0" };
+  const file: SessionFile = { session: r.session, buyer: buyer.address, seller, mint, deposit: deposit.toString(), expiresAt: Number(expiresAt), agentKeyPath, rpcUrl, committed: "0", openedSlot: r.openedSlot.toString() };
   writeFileSync(out, JSON.stringify(file, null, 2));
   console.log(JSON.stringify({ opened: r.session, tx: r.tx, agentSigner: agent.address, file: out }, null, 2));
 } else if (cmd === "status" || cmd === "close") {
   const f = JSON.parse(readFileSync(arg("file", "./data/session.json"), "utf8")) as SessionFile;
   if (cmd === "status") {
     const s = await new RpcSessionReader(chain.rpc).get(address(f.session));
-    console.log(JSON.stringify(s ? { ...s, nonce: String(s.nonce), deposit: String(s.deposit), redeemed: String(s.redeemed), committedLocally: f.committed } : { closed: true }, null, 2));
+    console.log(JSON.stringify(s ? { ...s, nonce: String(s.nonce), deposit: String(s.deposit), redeemed: String(s.redeemed), openedSlot: String(s.openedSlot), committedLocally: f.committed } : { closed: true }, null, 2));
   } else {
     const buyer = await signerFrom(process.env.BUYER_KEYPAIR ?? `${process.env.HOME}/.config/solana/id.json`);
     console.log(JSON.stringify({ closed: f.session, tx: await closeSession(chain, { caller: buyer, buyer: address(f.buyer), session: address(f.session), mint: address(f.mint) }) }, null, 2));

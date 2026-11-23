@@ -33,6 +33,8 @@ export interface BuyerSession {
   seller: Address;
   mint: Address;
   deposit: bigint;
+  /** Slot the session was opened in (read from the account after opening); receipts are bound to it. */
+  openedSlot: bigint;
 }
 
 /**
@@ -64,7 +66,7 @@ export class SessionPayer {
     const next = this.committed + BigInt(req.amount);
     if (next > this.session.deposit) throw new Error("Session deposit exhausted; top up or open a new session");
     this.pending = next;
-    const signature = this.signer.sign(receiptMessage(PROGRAM_ID, this.session.address, next));
+    const signature = this.signer.sign(receiptMessage(PROGRAM_ID, this.session.address, this.session.openedSlot, next));
     return { session: this.session.address, cumulative: next.toString(), signature: Buffer.from(signature).toString("base64") };
   }
 

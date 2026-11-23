@@ -1,5 +1,5 @@
-//! Runs the compiled program (target/deploy/pay_session.so) in LiteSVM.
-//! Build it first: `anchor build` (or `cargo build-sbf`).
+//! Runs the compiled program in LiteSVM: target/deploy/pay_session.so, or the file named by
+//! PAY_SESSION_SO. Build it first: `anchor build` (or `cargo build-sbf`).
 
 use anchor_lang::{InstructionData, ToAccountMetas};
 use litesvm::LiteSVM;
@@ -62,6 +62,13 @@ fn now(svm: &LiteSVM) -> i64 {
     svm.get_sysvar::<Clock>().unix_timestamp
 }
 
+/// Move to a later slot, as consecutive transactions on a real cluster would.
+fn next_slot(svm: &mut LiteSVM) {
+    let mut c = svm.get_sysvar::<Clock>();
+    c.slot += 1;
+    svm.set_sysvar(&c);
+}
+
 fn warp(svm: &mut LiteSVM, secs: i64) {
     let mut c = svm.get_sysvar::<Clock>();
     c.unix_timestamp += secs;
@@ -70,7 +77,9 @@ fn warp(svm: &mut LiteSVM, secs: i64) {
 
 fn setup() -> Env {
     let mut svm = LiteSVM::new();
-    svm.add_program(pay_session::ID, include_bytes!("../../target/deploy/pay_session.so"));
+    let so_path = std::env::var("PAY_SESSION_SO").unwrap_or_else(|_| concat!(env!("CARGO_MANIFEST_DIR"), "/../target/deploy/pay_session.so").to_string());
+    let so = std::fs::read(&so_path).unwrap_or_else(|e| panic!("read {so_path}: {e} (build the program first)"));
+    svm.add_program(pay_session::ID, &so);
     let (buyer, seller, agent) = (Keypair::new(), Keypair::new(), Keypair::new());
     for k in [&buyer, &seller] {
         svm.airdrop(&k.pubkey(), 10_000_000_000).unwrap();
@@ -135,8 +144,10 @@ fn ed25519_ix(pubkey: &Pubkey, sig: &[u8; 64], msg: &[u8], ix_index: u16) -> Ins
     Instruction { program_id: solana_sdk::ed25519_program::ID, accounts: vec![], data: d }
 }
 
-fn signed_receipt(signer: &Keypair, session: &Pubkey, cumulative: u64) -> ([u8; 64], Vec<u8>) {
-    let msg = receipt_message(&pay_session::ID, session, cumulative).to_vec();
+/// A receipt for `cumulative`, bound to the session's current lifetime (the slot it was opened in).
+fn signed_receipt(e: &Env, signer: &Keypair, session: &Pubkey, cumulative: u64) -> ([u8; 64], Vec<u8>) {
+    let opened_slot = session_state(e, session).opened_slot;
+    let msg = receipt_message(&pay_session::ID, session, opened_slot, cumulative).to_vec();
     let sig: [u8; 64] = signer.sign_message(&msg).as_ref().try_into().unwrap();
     (sig, msg)
 }
@@ -153,7 +164,7 @@ fn redeem_ix(e: &Env, session: &Pubkey, redeemer: &Pubkey, cumulative: u64) -> I
 
 /// The happy path: the agent's receipt for `cumulative`, redeemed by the seller.
 fn redeem(e: &mut Env, session: &Pubkey, cumulative: u64) -> Result<(), String> {
-    let (sig, msg) = signed_receipt(&e.agent, session, cumulative);
+    let (sig, msg) = signed_receipt(e, &e.agent, session, cumulative);
     let ixs = [ed25519_ix(&e.agent.pubkey(), &sig, &msg, u16::MAX), redeem_ix(e, session, &e.seller.pubkey(), cumulative)];
     let seller = e.seller.insecure_clone();
     send(&mut e.svm, &ixs, &seller, &[])
@@ -212,7 +223,7 @@ fn rejects_receipts_signed_by_anyone_but_the_session_signer() {
     let mut e = setup();
     let s = open(&mut e, 1, DEPOSIT, HOUR).unwrap();
     // A valid signature, but by the buyer's main key rather than the session's agent key.
-    let (sig, msg) = signed_receipt(&e.buyer, &s, 100);
+    let (sig, msg) = signed_receipt(&e, &e.buyer, &s, 100);
     let ixs = [ed25519_ix(&e.buyer.pubkey(), &sig, &msg, u16::MAX), redeem_ix(&e, &s, &e.seller.pubkey(), 100)];
     let seller = e.seller.insecure_clone();
     assert_err(send(&mut e.svm, &ixs, &seller, &[]), "WrongSigner");
@@ -223,7 +234,7 @@ fn rejects_a_receipt_meant_for_another_session() {
     let mut e = setup();
     let s1 = open(&mut e, 1, DEPOSIT, HOUR).unwrap();
     let s2 = open(&mut e, 2, DEPOSIT, HOUR).unwrap();
-    let (sig, msg) = signed_receipt(&e.agent, &s1, 100);
+    let (sig, msg) = signed_receipt(&e, &e.agent, &s1, 100);
     let ixs = [ed25519_ix(&e.agent.pubkey(), &sig, &msg, u16::MAX), redeem_ix(&e, &s2, &e.seller.pubkey(), 100)];
     let seller = e.seller.insecure_clone();
     assert_err(send(&mut e.svm, &ixs, &seller, &[]), "WrongReceipt");
@@ -244,7 +255,7 @@ fn rejects_signature_offsets_that_point_outside_the_ed25519_instruction() {
     let s = open(&mut e, 1, DEPOSIT, HOUR).unwrap();
     // Explicit index 0 instead of "this instruction": the precompile still verifies (index 0 is
     // itself here), but the program must refuse any layout where verified bytes could live elsewhere.
-    let (sig, msg) = signed_receipt(&e.agent, &s, 100);
+    let (sig, msg) = signed_receipt(&e, &e.agent, &s, 100);
     let ixs = [ed25519_ix(&e.agent.pubkey(), &sig, &msg, 0), redeem_ix(&e, &s, &e.seller.pubkey(), 100)];
     let seller = e.seller.insecure_clone();
     assert_err(send(&mut e.svm, &ixs, &seller, &[]), "BadSignatureInstruction");
@@ -254,7 +265,7 @@ fn rejects_signature_offsets_that_point_outside_the_ed25519_instruction() {
 fn a_forged_signature_fails_in_the_precompile() {
     let mut e = setup();
     let s = open(&mut e, 1, DEPOSIT, HOUR).unwrap();
-    let (mut sig, msg) = signed_receipt(&e.agent, &s, 100);
+    let (mut sig, msg) = signed_receipt(&e, &e.agent, &s, 100);
     sig[0] ^= 0xff;
     let ixs = [ed25519_ix(&e.agent.pubkey(), &sig, &msg, u16::MAX), redeem_ix(&e, &s, &e.seller.pubkey(), 100)];
     let seller = e.seller.insecure_clone();
@@ -267,7 +278,7 @@ fn a_forged_signature_fails_in_the_precompile() {
 fn only_the_seller_can_redeem() {
     let mut e = setup();
     let s = open(&mut e, 1, DEPOSIT, HOUR).unwrap();
-    let (sig, msg) = signed_receipt(&e.agent, &s, 100);
+    let (sig, msg) = signed_receipt(&e, &e.agent, &s, 100);
     let ixs = [ed25519_ix(&e.agent.pubkey(), &sig, &msg, u16::MAX), redeem_ix(&e, &s, &e.buyer.pubkey(), 100)];
     let buyer = e.buyer.insecure_clone();
     assert_err(send(&mut e.svm, &ixs, &buyer, &[]), "Unauthorized");
@@ -334,4 +345,28 @@ fn sessions_must_leave_time_to_redeem() {
     assert_err(open(&mut e, 1, DEPOSIT, 60).map(|_| ()), "DurationTooShort");
     assert_err(open(&mut e, 2, DEPOSIT, 31 * 24 * HOUR).map(|_| ()), "DurationTooLong");
     assert_err(open(&mut e, 3, 0, HOUR).map(|_| ()), "ZeroAmount");
+}
+
+#[test]
+fn a_reopened_session_does_not_accept_receipts_from_its_earlier_lifetime() {
+    // Same buyer, seller, nonce and agent key: the session PDA is the same address both times.
+    let mut e = setup();
+    let s = open(&mut e, 7, DEPOSIT, 2 * HOUR).unwrap();
+    let (sig, msg) = signed_receipt(&e, &e.agent, &s, 2 * USDC);
+    let old_ed = ed25519_ix(&e.agent.pubkey(), &sig, &msg, u16::MAX);
+    let first = [old_ed.clone(), redeem_ix(&e, &s, &e.seller.pubkey(), 2 * USDC)];
+    let seller = e.seller.insecure_clone();
+    send(&mut e.svm, &first, &seller, &[]).unwrap();
+    let close = [close_ix(&e, &s, &e.seller.pubkey())];
+    send(&mut e.svm, &close, &seller, &[]).unwrap();
+    next_slot(&mut e.svm);
+    let again = open(&mut e, 7, DEPOSIT, 2 * HOUR).unwrap();
+    assert_eq!(again, s);
+    // Replaying the first lifetime's signed receipt must not pay the seller twice.
+    let replay = [old_ed, redeem_ix(&e, &s, &e.seller.pubkey(), 2 * USDC)];
+    assert_err(send(&mut e.svm, &replay, &seller, &[]), "WrongReceipt");
+    assert_eq!(balance(&e.svm, &e.seller_token), 2 * USDC);
+    // A receipt for the new lifetime still works.
+    redeem(&mut e, &s, USDC).unwrap();
+    assert_eq!(balance(&e.svm, &e.seller_token), 3 * USDC);
 }

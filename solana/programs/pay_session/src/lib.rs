@@ -8,8 +8,9 @@
 //! whatever wasn't redeemed.
 //!
 //! Safety properties (each has a test in `tests/`):
-//! - Receipts are bound to this program, this session and an amount, so they
-//!   can't be replayed against another session or deployment.
+//! - Receipts are bound to this program, this session, this session's lifetime
+//!   (the slot it was opened in) and an amount, so they can't be replayed against
+//!   another session or deployment, or against the same address re-opened later.
 //! - `cumulative` only moves forward and can't exceed the deposit, so a receipt
 //!   can be redeemed at most once and the seller can never take more than was
 //!   deposited.
@@ -28,20 +29,24 @@ use anchor_spl::token_interface::{self, CloseAccount, Mint, TokenAccount, TokenI
 declare_id!("E5fA3t5xQkhjSiwrE5EzJ4wgr9fWSbTZzXsVxgKjGy3T");
 
 /// Domain separator at the start of every receipt (16 bytes).
-pub const RECEIPT_DOMAIN: &[u8; 16] = b"x402-session-v1\0";
-/// Receipt = domain || program id || session || cumulative (u64 LE).
-pub const RECEIPT_LEN: usize = 16 + 32 + 32 + 8;
+pub const RECEIPT_DOMAIN: &[u8; 16] = b"x402-session-v2\0";
+/// Receipt = domain || program id || session || opened_slot (u64 LE) || cumulative (u64 LE).
+pub const RECEIPT_LEN: usize = 16 + 32 + 32 + 8 + 8;
 /// Sessions must last at least this long, so the seller has time to redeem.
 pub const MIN_DURATION_SECS: i64 = 15 * 60;
 /// And at most this long, so deposits can't be locked away indefinitely.
 pub const MAX_DURATION_SECS: i64 = 30 * 24 * 60 * 60;
 
-pub fn receipt_message(program: &Pubkey, session: &Pubkey, cumulative: u64) -> [u8; RECEIPT_LEN] {
+/// `opened_slot` identifies one lifetime of a session address. A session PDA can be closed and
+/// re-opened with the same seeds; without it, receipts from the earlier lifetime would be valid
+/// again against the new deposit.
+pub fn receipt_message(program: &Pubkey, session: &Pubkey, opened_slot: u64, cumulative: u64) -> [u8; RECEIPT_LEN] {
     let mut m = [0u8; RECEIPT_LEN];
     m[..16].copy_from_slice(RECEIPT_DOMAIN);
     m[16..48].copy_from_slice(program.as_ref());
     m[48..80].copy_from_slice(session.as_ref());
-    m[80..].copy_from_slice(&cumulative.to_le_bytes());
+    m[80..88].copy_from_slice(&opened_slot.to_le_bytes());
+    m[88..].copy_from_slice(&cumulative.to_le_bytes());
     m
 }
 
@@ -51,7 +56,8 @@ pub mod pay_session {
 
     pub fn open_session(ctx: Context<OpenSession>, nonce: u64, deposit: u64, expires_at: i64, signer: Pubkey) -> Result<()> {
         require!(deposit > 0, SessionError::ZeroAmount);
-        let now = Clock::get()?.unix_timestamp;
+        let clock = Clock::get()?;
+        let now = clock.unix_timestamp;
         require!(expires_at >= now + MIN_DURATION_SECS, SessionError::DurationTooShort);
         require!(expires_at <= now + MAX_DURATION_SECS, SessionError::DurationTooLong);
         require_keys_neq!(ctx.accounts.buyer.key(), ctx.accounts.seller.key(), SessionError::BuyerIsSeller);
@@ -67,6 +73,7 @@ pub mod pay_session {
         s.expires_at = expires_at;
         s.bump = ctx.bumps.session;
         s.vault_bump = ctx.bumps.vault;
+        s.opened_slot = clock.slot;
 
         token_interface::transfer_checked(
             CpiContext::new(
@@ -114,7 +121,7 @@ pub mod pay_session {
         let s = &ctx.accounts.session;
         require!(cumulative > s.redeemed, SessionError::NotIncreasing);
         require!(cumulative <= s.deposit, SessionError::ExceedsDeposit);
-        let expected = receipt_message(&crate::ID, &session_key, cumulative);
+        let expected = receipt_message(&crate::ID, &session_key, s.opened_slot, cumulative);
         verify_preceding_ed25519(&ctx.accounts.instructions, &s.signer, &expected)?;
 
         let amount = cumulative - s.redeemed;
@@ -230,6 +237,8 @@ pub struct Session {
     pub expires_at: i64,
     pub bump: u8,
     pub vault_bump: u8,
+    /// Slot this session was opened in: identifies this lifetime of the address in receipts.
+    pub opened_slot: u64,
 }
 
 #[derive(Accounts)]

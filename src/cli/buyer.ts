@@ -47,7 +47,7 @@ if (process.env.SESSION_FILE) {
   const path = process.env.SESSION_FILE;
   const f = JSON.parse(readFileSync(path, "utf8")) as SessionFile;
   const network = await caip2(connect(f.rpcUrl).rpc);
-  const p = new SessionPayer({ address: address(f.session), seller: address(f.seller), mint: address(f.mint), deposit: BigInt(f.deposit) }, new ReceiptSigner(readKeypair(f.agentKeyPath)), BigInt(f.committed), (committed) =>
+  const p = new SessionPayer({ address: address(f.session), seller: address(f.seller), mint: address(f.mint), deposit: BigInt(f.deposit), openedSlot: BigInt(f.openedSlot) }, new ReceiptSigner(readKeypair(f.agentKeyPath)), BigInt(f.committed), (committed) =>
     writeFileSync(path, JSON.stringify({ ...JSON.parse(readFileSync(path, "utf8")), committed: committed.toString() }, null, 2)),
   );
   payers.push(sessionPayer(network, p));

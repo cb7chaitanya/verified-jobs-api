@@ -60,12 +60,12 @@ export class SessionFacilitator implements FacilitatorClient {
     if (state.expiresAt - nowSec < (this.o.minRemainingSeconds ?? 600)) return fail("session_expiring", "Session ends too soon to accept new receipts; open a new one");
 
     const cumulative = BigInt(p.data.cumulative);
-    const prior = this.o.ledger.accepted(session);
+    const prior = this.o.ledger.accepted(session, state.openedSlot);
     const base = prior && prior.accepted > state.redeemed ? prior.accepted : state.redeemed;
     if (cumulative - base < BigInt(req.amount)) return fail("insufficient_increment", `Receipt must cover at least ${req.amount} beyond the ${base} already accepted`);
     if (cumulative > state.deposit) return fail("insufficient_funds", "Receipt exceeds the session's deposit; top up");
     const signature = new Uint8Array(Buffer.from(p.data.signature, "base64"));
-    if (!verifyEd25519(state.signer, receiptMessage(PROGRAM_ID, session, cumulative), signature)) return fail("invalid_signature", "Receipt isn't signed by the session's signer");
+    if (!verifyEd25519(state.signer, receiptMessage(PROGRAM_ID, session, state.openedSlot, cumulative), signature)) return fail("invalid_signature", "Receipt isn't signed by the session's signer");
     return { ok: true as const, state, session, cumulative, signature, expected: prior ? prior.accepted : null };
   }
 
@@ -78,10 +78,10 @@ export class SessionFacilitator implements FacilitatorClient {
     const network = this.o.network;
     const c = await this.check(payload, req); // re-check: state may have moved since verify
     if (!c.ok) return { success: false, errorReason: c.invalidReason, errorMessage: c.invalidMessage, transaction: "", network };
-    if (!this.o.ledger.advance(c.session, c.expected, c.cumulative, c.signature)) {
+    if (!this.o.ledger.advance(c.session, c.state.openedSlot, c.expected, c.cumulative, c.signature)) {
       return { success: false, errorReason: "conflict", errorMessage: "Another request used this receipt first", transaction: "", network, payer: c.state.buyer };
     }
-    const id = `session:${c.session}:${c.cumulative}`;
+    const id = `session:${c.session}:${c.state.openedSlot}:${c.cumulative}`;
     this.o.ledger.recordPayment({ id, scheme: SCHEME, network, payer: c.state.buyer, signer: c.state.signer, payTo: req.payTo, amount: req.amount, resource: payload.resource?.url ?? null });
     return { success: true, transaction: id, network, payer: c.state.buyer, amount: req.amount, extra: { session: c.session, cumulative: c.cumulative.toString() } };
   }

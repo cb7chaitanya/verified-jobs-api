@@ -1,6 +1,7 @@
 import { findAssociatedTokenPda, getCreateAssociatedTokenIdempotentInstructionAsync, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import type { Address, KeyPairSigner } from "@solana/kit";
-import { closeSessionInstruction, ed25519Instruction, openSessionInstruction, PROGRAM_ID, receiptMessage, redeemInstruction, sessionAddress, vaultAddress } from "./protocol";
+import { getBase64Encoder } from "@solana/kit";
+import { closeSessionInstruction, decodeSession, ed25519Instruction, openSessionInstruction, PROGRAM_ID, receiptMessage, redeemInstruction, sessionAddress, vaultAddress } from "./protocol";
 import type { connect, RpcSessionReader } from "./chain";
 import type { Ledger } from "../ledger";
 import { log } from "../core/log";
@@ -19,7 +20,11 @@ export async function openSession(chain: Chain, a: { buyer: KeyPairSigner; selle
   const vault = await vaultAddress(session);
   const buyerToken = await ata(a.buyer.address, a.mint);
   const tx = await chain.send(a.buyer, [openSessionInstruction({ buyer: a.buyer.address, seller: a.seller, mint: a.mint, buyerToken, session, vault }, { nonce, deposit: a.deposit, expiresAt: a.expiresAt, signer: a.signer })]);
-  return { session, vault, nonce, tx };
+  // Receipts are bound to the slot the session was opened in, so read it back from the account.
+  const { value } = await chain.rpc.getAccountInfo(session, { encoding: "base64", commitment: "confirmed" }).send();
+  const state = value ? decodeSession(session, new Uint8Array(getBase64Encoder().encode(value.data[0]))) : null;
+  if (!state) throw new Error(`Opened session ${session} but couldn't read it back`);
+  return { session, vault, nonce, tx, openedSlot: state.openedSlot };
 }
 
 export async function closeSession(chain: Chain, a: { caller: KeyPairSigner; buyer: Address; session: Address; mint: Address }) {
@@ -40,12 +45,14 @@ export async function redeemDue(chain: Chain, ledger: Ledger, reader: RpcSession
     const session = r.session as Address;
     reader.forget(session);
     const state = await reader.get(session);
-    if (!state) {
-      results.push({ session, amount: 0n, error: "session account not found (closed?)" });
+    if (!state || state.openedSlot !== r.openedSlot) {
+      // Closed, or re-opened as a new lifetime: these receipts can never be redeemed. Stop re-reading them.
+      ledger.retire(session, r.openedSlot);
+      results.push({ session, amount: 0n, error: state ? "session was re-opened; old receipts retired" : "session account not found (closed?)" });
       continue;
     }
     if (state.redeemed >= r.accepted) {
-      ledger.markRedeemed(session, state.redeemed);
+      ledger.markRedeemed(session, r.openedSlot, state.redeemed);
       continue;
     }
     const owed = r.accepted - state.redeemed;
@@ -54,10 +61,10 @@ export async function redeemDue(chain: Chain, ledger: Ledger, reader: RpcSession
     try {
       const sellerToken = await ata(seller.address, state.mint);
       const createAta = await getCreateAssociatedTokenIdempotentInstructionAsync({ payer: seller, owner: seller.address, mint: state.mint });
-      const msg = receiptMessage(PROGRAM_ID, session, r.accepted);
+      const msg = receiptMessage(PROGRAM_ID, session, state.openedSlot, r.accepted);
       // The ed25519 check must sit immediately before redeem.
       const tx = await chain.send(seller, [createAta, ed25519Instruction(state.signer, r.signature, msg), redeemInstruction({ seller: seller.address, session, mint: state.mint, vault: await vaultAddress(session), sellerToken }, r.accepted)]);
-      ledger.markRedeemed(session, r.accepted);
+      ledger.markRedeemed(session, r.openedSlot, r.accepted);
       results.push({ session, amount: owed, tx });
     } catch (e) {
       log.warn({ session, err: e instanceof Error ? e.message : String(e) }, "redeem failed");

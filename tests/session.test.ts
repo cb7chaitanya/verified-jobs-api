@@ -31,9 +31,10 @@ const agent = keypair();
 const mint = keypair().address;
 const sessionAddr = keypair().address;
 const signer = new ReceiptSigner(agent.secret);
+const SLOT = 4242n;
 
 function state(over: Partial<SessionState> = {}): SessionState {
-  return { address: sessionAddr, buyer: buyer.address, seller: seller.address, mint, signer: agent.address, nonce: 1n, deposit: 5_000n, redeemed: 0n, expiresAt: NOW / 1000 + 3600, ...over };
+  return { address: sessionAddr, buyer: buyer.address, seller: seller.address, mint, signer: agent.address, nonce: 1n, deposit: 5_000n, redeemed: 0n, expiresAt: NOW / 1000 + 3600, openedSlot: SLOT, ...over };
 }
 class FakeReader implements SessionReader {
   constructor(public s: SessionState | null = state()) {}
@@ -43,10 +44,10 @@ class FakeReader implements SessionReader {
 }
 
 const req = { scheme: SCHEME, network: NETWORK, asset: mint, amount: "1000", payTo: seller.address, maxTimeoutSeconds: 120, extra: { programId: PROGRAM_ID } };
-const receipt = (cumulative: bigint, by = signer, session = sessionAddr) => ({
+const receipt = (cumulative: bigint, by = signer, session = sessionAddr, slot = SLOT) => ({
   x402Version: 2,
   accepted: req,
-  payload: { session, cumulative: cumulative.toString(), signature: Buffer.from(by.sign(receiptMessage(PROGRAM_ID, session, cumulative))).toString("base64") },
+  payload: { session, cumulative: cumulative.toString(), signature: Buffer.from(by.sign(receiptMessage(PROGRAM_ID, session, slot, cumulative))).toString("base64") },
 });
 
 function setup(reader = new FakeReader(), ledger = new Ledger()) {
@@ -54,11 +55,13 @@ function setup(reader = new FakeReader(), ledger = new Ledger()) {
 }
 
 describe("receipt format", () => {
-  it("is domain || program || session || cumulative (u64 LE), 88 bytes, like the Rust program", () => {
-    const m = receiptMessage(PROGRAM_ID, sessionAddr, 0x0102n);
-    expect(m.length).toBe(88);
-    expect(Buffer.from(m.subarray(0, 16)).toString("latin1")).toBe("x402-session-v1\0");
-    expect([...m.subarray(80)]).toEqual([2, 1, 0, 0, 0, 0, 0, 0]);
+  it("is domain || program || session || opened slot || cumulative (u64 LE), 96 bytes, like the Rust program", () => {
+    const m = receiptMessage(PROGRAM_ID, sessionAddr, 0x0a0bn, 0x0102n);
+    expect(m.length).toBe(96);
+    expect(Buffer.from(m.subarray(0, 16)).toString("latin1")).toBe("x402-session-v2\0");
+    expect([...m.subarray(80, 82)]).toEqual([0x0b, 0x0a]);
+    expect([...m.subarray(88, 90)]).toEqual([0x02, 0x01]);
+    expect([...m.subarray(80)]).toEqual([0x0b, 0x0a, 0, 0, 0, 0, 0, 0, 2, 1, 0, 0, 0, 0, 0, 0]);
   });
 });
 
@@ -66,9 +69,9 @@ describe("session facilitator", () => {
   it("accepts a correctly signed receipt once and records the payment", async () => {
     const { fac, ledger } = setup();
     expect(await fac.verify(receipt(1000n), req)).toMatchObject({ isValid: true, payer: buyer.address });
-    expect(await fac.settle(receipt(1000n), req)).toMatchObject({ success: true, transaction: `session:${sessionAddr}:1000` });
-    expect(ledger.accepted(sessionAddr)).toEqual({ accepted: 1000n, redeemed: 0n });
-    expect(ledger.payment(`session:${sessionAddr}:1000`)).toMatchObject({ payer: buyer.address, signer: agent.address, amount: "1000" });
+    expect(await fac.settle(receipt(1000n), req)).toMatchObject({ success: true, transaction: `session:${sessionAddr}:${SLOT}:1000` });
+    expect(ledger.accepted(sessionAddr, SLOT)).toEqual({ accepted: 1000n, redeemed: 0n });
+    expect(ledger.payment(`session:${sessionAddr}:${SLOT}:1000`)).toMatchObject({ payer: buyer.address, signer: agent.address, amount: "1000" });
     // The same receipt again pays for nothing new.
     expect(await fac.verify(receipt(1000n), req)).toMatchObject({ isValid: false, invalidReason: "insufficient_increment" });
     expect(await fac.verify(receipt(1500n), req)).toMatchObject({ isValid: false, invalidReason: "insufficient_increment" });
@@ -107,10 +110,36 @@ describe("session facilitator", () => {
     expect(await fac.verify(receipt(3000n), req)).toMatchObject({ invalidReason: "insufficient_increment" });
     expect(await fac.verify(receipt(4000n), req)).toMatchObject({ isValid: true });
   });
+
+  it("a session address re-opened as a new lifetime refuses the old lifetime's receipts and starts fresh", async () => {
+    const reader = new FakeReader();
+    const { fac, ledger } = setup(reader);
+    expect((await fac.settle(receipt(3000n), req)).success).toBe(true);
+    // Closed and re-opened at the same address in a later slot.
+    reader.s = state({ openedSlot: SLOT + 10n });
+    expect(await fac.verify(receipt(4000n), req)).toMatchObject({ isValid: false, invalidReason: "invalid_signature" });
+    // The new lifetime isn't blocked by the old ledger row: its first receipt is accepted from zero.
+    expect(await fac.settle(receipt(1000n, signer, sessionAddr, SLOT + 10n), req)).toMatchObject({ success: true, transaction: `session:${sessionAddr}:${SLOT + 10n}:1000` });
+    expect(ledger.accepted(sessionAddr, SLOT + 10n)).toEqual({ accepted: 1000n, redeemed: 0n });
+    expect(ledger.accepted(sessionAddr, SLOT)).toBeNull();
+  });
+
+  it("migrates a ledger created before receipts were bound to a lifetime", () => {
+    const path = join(mkdtempSync(join(tmpdir(), "vja-")), "old.db");
+    const old = new Ledger(path);
+    old.db.exec("DROP TABLE session_receipts; CREATE TABLE session_receipts (session TEXT PRIMARY KEY, accepted TEXT NOT NULL, signature BLOB NOT NULL, redeemed TEXT NOT NULL DEFAULT '0', updated_at INTEGER NOT NULL)");
+    old.db.exec(`INSERT INTO session_receipts VALUES ('${sessionAddr}', '5000', x'00', '0', 1)`);
+    old.db.close();
+    const ledger = new Ledger(path);
+    expect(ledger.unredeemed()).toMatchObject([{ session: sessionAddr, openedSlot: null, accepted: 5000n }]);
+    ledger.retire(sessionAddr, null);
+    expect(ledger.unredeemed()).toEqual([]);
+    expect(ledger.advance(sessionAddr, SLOT, null, 1000n, new Uint8Array(64))).toBe(true);
+  });
 });
 
 describe("buyer side", () => {
-  const session = { address: sessionAddr, seller: seller.address, mint, deposit: 3000n };
+  const session = { address: sessionAddr, seller: seller.address, mint, deposit: 3000n, openedSlot: SLOT };
   it("advances its running total only when the seller confirms, so a failed call costs nothing extra", () => {
     const saved: bigint[] = [];
     const p = new SessionPayer(session, signer, 0n, (v) => saved.push(v));
@@ -159,7 +188,7 @@ describe("session payments over HTTP", () => {
       const s = app.listen(0, () => r(s));
     });
     const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1/verify?url=${encodeURIComponent(OPEN.url)}`;
-    const payer = new SessionPayer({ address: sessionAddr, seller: seller.address, mint, deposit: 5000n }, signer);
+    const payer = new SessionPayer({ address: sessionAddr, seller: seller.address, mint, deposit: 5000n, openedSlot: SLOT }, signer);
     const call = async () => {
       const first = await fetch(base);
       const required = JSON.parse(Buffer.from(first.headers.get("payment-required")!, "base64").toString());
@@ -172,12 +201,12 @@ describe("session payments over HTTP", () => {
     };
     expect(await call()).toBe(200);
     expect(await call()).toBe(200);
-    expect(ledger.accepted(sessionAddr)?.accepted).toBe(2000n);
+    expect(ledger.accepted(sessionAddr, SLOT)?.accepted).toBe(2000n);
     fail = true;
     expect(await call()).toBe(502);
-    expect(ledger.accepted(sessionAddr)?.accepted).toBe(2000n); // not charged
+    expect(ledger.accepted(sessionAddr, SLOT)?.accepted).toBe(2000n); // not charged
     fail = false;
     expect(await call()).toBe(200);
-    expect(ledger.accepted(sessionAddr)?.accepted).toBe(3000n); // exactly one more call's worth
+    expect(ledger.accepted(sessionAddr, SLOT)?.accepted).toBe(3000n); // exactly one more call's worth
   });
 });

@@ -514,6 +514,13 @@
           {
             "name": "vault_bump",
             "type": "u8"
+          },
+          {
+            "name": "opened_slot",
+            "docs": [
+              "Slot this session was opened in: identifies this lifetime of the address in receipts."
+            ],
+            "type": "u64"
           }
         ]
       }
