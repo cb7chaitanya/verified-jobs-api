@@ -9,7 +9,7 @@ import { getAddressDecoder, type Address } from "@solana/kit";
 import { x402ResourceServer } from "@x402/express";
 import { Ledger } from "../src/ledger";
 import { SessionFacilitator, type SessionReader } from "../src/session/facilitator";
-import { PROGRAM_ID, receiptMessage, ReceiptSigner, SCHEME, type SessionState } from "../src/session/protocol";
+import { PROGRAM_ID, receiptMessage, ReceiptSigner, SCHEME, verifyEd25519, type SessionState } from "../src/session/protocol";
 import { SessionPayer, SessionServerScheme } from "../src/session/scheme";
 import { createApp } from "../src/app";
 import { UpstreamError, type Verification } from "../src/core/verify";
@@ -151,6 +151,19 @@ describe("buyer side", () => {
     p.settled(undefined);
     expect([p.spent, saved]).toEqual([2000n, [1000n, 2000n]]);
   });
+  it("never adopts a running total the seller reports: only what it signed (a dishonest service can't inflate the next receipt)", () => {
+    const payer = new SessionPayer({ ...session, deposit: 50_000n }, signer);
+    expect(payer.payload(req).cumulative).toBe("1000");
+    expect(payer.settled("49000")).toBe(false); // claims the buyer owes 49 000
+    expect(payer.spent).toBe(1000n);
+    const next = payer.payload(req);
+    expect(next.cumulative).toBe("2000");
+    expect(verifyEd25519(agent.address, receiptMessage(PROGRAM_ID, sessionAddr, SLOT, 2000n), new Uint8Array(Buffer.from(next.signature, "base64")))).toBe(true);
+    expect(payer.settled("2000")).toBe(true);
+    expect(payer.settled("9999")).toBe(false); // nothing pending: ignored
+    expect(payer.spent).toBe(2000n);
+  });
+
   it("refuses to sign for a different seller, token or program, or past the deposit", () => {
     const p = new SessionPayer(session, signer, 2500n);
     expect(() => p.payload({ ...req, payTo: buyer.address })).toThrow(/different seller/);

@@ -70,14 +70,21 @@ export class SessionPayer {
     return { session: this.session.address, cumulative: next.toString(), signature: Buffer.from(signature).toString("base64") };
   }
 
-  /** Call with the seller's settlement response once the paid request succeeded. */
-  settled(accepted: string | undefined) {
-    const v = accepted ? BigInt(accepted) : this.pending;
-    if (v !== null && v > this.committed) {
-      this.committed = v;
-      this.persist(v);
-    }
+  /**
+   * Call once the paid request succeeded. The running total advances only to the receipt this
+   * payer actually signed (`pending`). The seller's reported total is a claim from the other side:
+   * it's checked, never adopted, so a dishonest or spoofed response can't make the next receipt
+   * cover more than one call's price. Returns false if the seller reported a different total.
+   */
+  settled(accepted: string | undefined): boolean {
+    const signed = this.pending;
     this.pending = null;
+    if (signed === null) return false;
+    if (signed > this.committed) {
+      this.committed = signed;
+      this.persist(signed);
+    }
+    return accepted === undefined || accepted === signed.toString();
   }
 
   failed() {
