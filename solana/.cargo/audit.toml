@@ -1,0 +1,26 @@
+# cargo audit configuration for the pay_session workspace.
+#
+# Every advisory below is in the *test harness* only (litesvm 0.6 and solana-sdk 2.2, which
+# pull in an HTTP client and old signing crates). None is in the on-chain program: check with
+#   cargo tree -p pay_session -e normal -i <crate>
+# The tests run the program in-process with throwaway keys and make no network connections,
+# so the TLS/HTTP/URL issues aren't reachable, and the ed25519 issues concern signing APIs
+# the tests use only with keys they generate. They go away with the move to the Solana 3.x
+# toolchain (litesvm 0.8+, solana-sdk 3), which Anchor 0.31 doesn't support yet.
+[advisories]
+ignore = [
+  "RUSTSEC-2024-0344", # curve25519-dalek 3.2.0 timing: via ed25519-dalek 1.0.1 <- solana-keypair <- litesvm (tests)
+  "RUSTSEC-2022-0093", # ed25519-dalek 1.0.1 double-pubkey oracle: same path (tests)
+  "RUSTSEC-2026-0258", # h2 0.3: via reqwest 0.11 <- solana-sdk RPC client (tests; no HTTP made)
+  "RUSTSEC-2026-0346", # rustls 0.21: same path
+  "RUSTSEC-2026-0349", # rustls 0.21: same path
+  "RUSTSEC-2026-0104", # rustls-webpki 0.101: same path
+  "RUSTSEC-2026-0098", # rustls-webpki 0.101: same path
+  "RUSTSEC-2026-0099", # rustls-webpki 0.101: same path
+  "RUSTSEC-2026-0382", # rustls-webpki 0.101: same path
+  "RUSTSEC-2026-0381", # webpki-roots 0.25: same path
+  "RUSTSEC-2026-0592", # url 2.5.8 (nested blob: URLs): same path
+]
+# "unsound" warnings (atty, memmap2: tooling/tests; rand 0.7.3 via libsecp256k1 for host builds
+# only; the on-chain build links no `rand`) are reported but don't fail the audit.
+informational_warnings = ["unsound"]
