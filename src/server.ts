@@ -110,6 +110,8 @@ if (process.env.DEMO === "1") {
     price: atomic,
     methods,
     dailyCap: usdc(env("DEMO_DAILY_CAP_USDC", "0.5")),
+    spendDb: env("DEMO_SPEND_DB", `${env("DEMO_DIR", "./data")}/demo-spend.db`),
+    publicOrigin: process.env.PUBLIC_URL,
     session,
     redeem: sellerKey && sessionChain ? { chain: sessionChain, ledger, seller: await signerFrom(sellerKey) } : undefined,
   });

@@ -10,6 +10,7 @@ import { ExactSvmScheme } from "@x402/svm/exact/server";
 import { createApp } from "../src/app";
 import type { Verification } from "../src/core/verify";
 import { mountDemo, type DemoMethod } from "../src/demo/demo";
+import { Ledger } from "../src/ledger";
 
 const SOL = "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1" as const;
 const PAY_TO = "9xQeWvG816bUx9EPjHmaT23yvVM2ZWbrrpZb9PusVFin";
@@ -41,7 +42,7 @@ const OPEN: Verification = {
 let server: Server | undefined;
 afterEach(() => server?.close());
 
-async function start(o: { dailyCap?: bigint; rate?: { max: number; windowMs: number } } = {}) {
+async function start(o: { dailyCap?: bigint; rate?: { max: number; windowMs: number }; publicOrigin?: string; failing?: boolean; redeem?: boolean } = {}) {
   const fac = new FakeFacilitator();
   const rs = new x402ResourceServer(fac).register(SOL, new ExactSvmScheme());
   const app = createApp({ verify: async () => OPEN, payments: { server: rs, options: [{ scheme: "exact", network: SOL, payTo: PAY_TO, price: "$0.001", label: "test" }] }, cacheMs: 0 });
@@ -52,13 +53,22 @@ async function start(o: { dailyCap?: bigint; rate?: { max: number; windowMs: num
   const results = mkdtempSync(join(tmpdir(), "demo-bench-"));
   writeFileSync(join(results, "devnet-2026-11-23.json"), JSON.stringify({ calls: 100, exact: { served: 100 } }));
   writeFileSync(join(results, "devnet-2026-11-23-raw.json"), JSON.stringify({ calls: 100, exact: { served: 60 } }));
-  const exact: DemoMethod = { id: "exact", network: SOL, payTo: PAY_TO, asset: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU", explorer: (tx) => `https://explorer.solana.com/tx/${tx}?cluster=devnet`, payer: async () => ({ network: SOL, scheme: "exact", create: async () => ({ transaction: "c2lnbmVk" }) }) };
-  mountDemo(app, { selfBase: base, price: 1000n, methods: [exact], dailyCap: o.dailyCap ?? 1_000_000n, resultsDir: results, rate: o.rate });
-  return { fac, base };
+  const exact: DemoMethod = { id: "exact", network: SOL, payTo: PAY_TO, asset: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU", explorer: (tx) => `https://explorer.solana.com/tx/${tx}?cluster=devnet`, payer: async () => {
+      if (o.failing) throw new Error("connect ECONNREFUSED https://user:secret@rpc.internal:8899");
+      return { network: SOL, scheme: "exact", create: async () => ({ transaction: "c2lnbmVk" }) };
+    } };
+  // One receipt due on a session the (fake, slow) chain no longer has: each redeem pass makes one RPC read.
+  let rpcReads = 0;
+  const ledger = new Ledger();
+  ledger.advance("11111111111111111111111111111112", 1n, null, 1000n, new Uint8Array(64));
+  const rpc = { getAccountInfo: () => ({ send: () => (rpcReads++, new Promise((r) => setTimeout(() => r({ value: null }), 50))) }) };
+  const redeem = o.redeem ? { chain: { rpc } as never, ledger, seller: {} as never } : undefined;
+  mountDemo(app, { selfBase: base, price: 1000n, methods: [exact], dailyCap: o.dailyCap ?? 1_000_000n, resultsDir: results, rate: o.rate, publicOrigin: o.publicOrigin, redeem });
+  return { fac, base, reads: () => rpcReads };
 }
 
 const run = async (base: string, body: unknown, headers: Record<string, string> = {}) => {
-  const r = await fetch(`${base}/demo/verify`, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
+  const r = await fetch(`${base}/demo/verify`, { method: "POST", headers: { "content-type": "application/json", origin: base, ...headers }, body: JSON.stringify(body) });
   const text = await r.text();
   return { status: r.status, events: r.headers.get("content-type")?.includes("ndjson") ? text.trim().split("\n").map((l) => JSON.parse(l) as Record<string, unknown>) : [], text };
 };
@@ -107,5 +117,37 @@ describe("demo page", () => {
     const { base } = await start({ rate: { max: 1, windowMs: 60_000 } });
     expect((await run(base, { url: POSTING, method: "exact" })).status).toBe(200);
     expect((await run(base, { url: POSTING, method: "exact" })).status).toBe(429);
+  });
+
+  it("requires the page's own Origin on POSTs, matching PUBLIC_URL when configured", async () => {
+    const { base, fac } = await start({ publicOrigin: "https://demo.example" });
+    expect((await fetch(`${base}/demo/verify`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).status).toBe(403);
+    expect((await run(base, { url: POSTING, method: "exact" })).status).toBe(403); // Host matches, PUBLIC_URL doesn't
+    expect((await run(base, { url: POSTING, method: "exact" }, { origin: "https://demo.example" })).status).toBe(200);
+    expect(fac.settles).toBe(1);
+  });
+
+  it("can't be framed by another site", async () => {
+    const { base } = await start();
+    const r = await fetch(base + "/");
+    expect(r.headers.get("content-security-policy")).toBe("frame-ancestors 'self'");
+    expect(r.headers.get("x-frame-options")).toBe("SAMEORIGIN");
+  });
+
+  it("shows visitors a generic error, never internal details", async () => {
+    const { base } = await start({ failing: true });
+    const { events, text } = await run(base, { url: POSTING, method: "exact" });
+    expect(events.at(-1)).toMatchObject({ type: "error", message: expect.stringMatching(/demo payment failed/) });
+    expect(text).not.toMatch(/secret|ECONNREFUSED|rpc\.internal/);
+  });
+
+  it("redeem shares the rate limit and joins an in-flight redeem instead of queueing more", async () => {
+    const { base, reads } = await start({ redeem: true, rate: { max: 1, windowMs: 60_000 } });
+    const post = () => fetch(`${base}/demo/redeem`, { method: "POST", headers: { origin: base } });
+    const burst = await Promise.all([post(), post(), post(), post(), post()]);
+    expect(burst.map((r) => r.status)).toEqual([200, 200, 200, 200, 200]); // one job, everyone joined it
+    expect(reads()).toBe(1);
+    expect((await post()).status).toBe(429); // the window is used up
+    expect((await run(base, { url: POSTING, method: "exact" })).status).toBe(429); // shared with paid runs
   });
 });

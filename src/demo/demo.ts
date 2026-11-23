@@ -21,7 +21,7 @@ import { RpcSessionReader } from "../session/chain";
 import { openSession, redeemDue } from "../session/ops";
 import { ReceiptSigner } from "../session/protocol";
 import { SessionPayer } from "../session/scheme";
-import { newKeypairFile } from "../cli/keys";
+import { newKeypair, writeKeypairFile } from "../cli/keys";
 
 export type MethodId = "gateway" | "exact" | "session";
 type Chain = ReturnType<typeof connect>;
@@ -64,9 +64,11 @@ export class DemoSession {
   async get(emit: (e: DemoEvent) => void, price: bigint): Promise<SessionPayer> {
     if (this.payer && this.payer.spent + price <= this.payer.session.deposit) return this.payer;
     emit({ type: "session-opening", deposit: this.deposit.toString() });
-    const key = newKeypairFile(join(this.dir, `demo-session-signer-${Date.now()}.json`));
+    const key = newKeypair();
     const t = performance.now();
     const opened = await openSession(this.chain, { buyer: this.buyer, seller: this.seller, mint: this.mint, signer: key.address, deposit: this.deposit, expiresAt: BigInt(Math.floor(Date.now() / 1000) + 24 * 3600) });
+    // Keep the signer key on disk only for sessions that actually opened (so failures leave no orphan keys).
+    writeKeypairFile(join(this.dir, `demo-session-signer-${opened.session}.json`), key.secret);
     this.payer = new SessionPayer({ address: opened.session, seller: this.seller, mint: this.mint, deposit: this.deposit, openedSlot: opened.openedSlot }, new ReceiptSigner(key.secret));
     emit({ type: "session-opened", session: opened.session, tx: opened.tx, explorer: solanaExplorer(opened.tx), ms: Math.round(performance.now() - t), deposit: this.deposit.toString() });
     return this.payer;
@@ -87,8 +89,12 @@ export interface DemoOptions {
   redeem?: { chain: Chain; ledger: Ledger; seller: KeyPairSigner };
   session?: DemoSession;
   resultsDir?: string;
-  /** Max paid runs per window, across all visitors. */
+  /** Max paid runs (and redeems) per window, across all visitors. */
   rate?: { max: number; windowMs: number };
+  /** Where the demo's spend log lives, so the daily cap survives restarts. In-memory if omitted. */
+  spendDb?: string;
+  /** The page's public origin (PUBLIC_URL). When set, POSTs must come from exactly this origin. */
+  publicOrigin?: string;
   fetchImpl?: typeof fetch;
 }
 
@@ -119,7 +125,7 @@ export function benchmarks(dir: string) {
 
 export function mountDemo(app: Express, o: DemoOptions) {
   const page = readFileSync(PAGE, "utf8");
-  const spend = new SpendLog();
+  const spend = new SpendLog(o.spendDb);
   const host = new URL(o.selfBase).host;
   const rate = o.rate ?? { max: 30, windowMs: 10 * 60_000 };
   const runs: number[] = [];
@@ -127,19 +133,35 @@ export function mountDemo(app: Express, o: DemoOptions) {
   const results = o.resultsDir ?? join(process.cwd(), "bench/results");
   const doFetch = o.fetchImpl ?? fetch;
 
-  /** Same-origin only: a browser on another site can't spend the demo's funds. */
+  const expectedOrigin = o.publicOrigin ? new URL(o.publicOrigin).origin : null;
+  /**
+   * POSTs must carry the page's own Origin (browsers always send it on fetch POSTs), so another
+   * site can't make a visitor's browser spend the demo's funds. Compared with PUBLIC_URL when it's
+   * configured, otherwise with the Host header.
+   */
   const sameOrigin = (req: Request) => {
     const origin = req.get("origin");
-    if (!origin) return true;
+    if (!origin) return false;
     try {
-      return new URL(origin).host === req.get("host");
+      const u = new URL(origin);
+      return expectedOrigin ? u.origin === expectedOrigin : u.host === req.get("host");
     } catch {
       return false;
     }
   };
+  /** One shared admission window for everything that spends money or RPC quota. */
+  const admit = () => {
+    const now = Date.now();
+    while (runs.length && now - runs[0]! > rate.windowMs) runs.shift();
+    if (runs.length >= rate.max) return false;
+    runs.push(now);
+    return true;
+  };
+  let redeeming: Promise<unknown> | null = null;
 
   app.get("/", (_req, res) => {
-    res.set("Cache-Control", "no-store").type("html").send(page);
+    // The page spends funds on click, so it must not be framed by another site.
+    res.set({ "Cache-Control": "no-store", "Content-Security-Policy": "frame-ancestors 'self'", "X-Frame-Options": "SAMEORIGIN" }).type("html").send(page);
   });
 
   app.get("/demo/config", (_req, res) => {
@@ -161,16 +183,19 @@ export function mountDemo(app: Express, o: DemoOptions) {
     const m = o.methods.find((x) => x.id === method);
     if (typeof url !== "string" || !url || url.length > 2048) return void res.status(400).json({ error: "INVALID_URL", message: "Paste a job posting URL" });
     if (!m) return void res.status(400).json({ error: "UNKNOWN_METHOD", message: "That payment method isn't enabled here" });
-    const now = Date.now();
-    while (runs.length && now - runs[0]! > rate.windowMs) runs.shift();
-    if (runs.length >= rate.max) return void res.status(429).json({ error: "RATE_LIMITED", message: "The demo is busy; try again in a few minutes" });
-    runs.push(now);
+    if (!admit()) return void res.status(429).json({ error: "RATE_LIMITED", message: "The demo is busy; try again in a few minutes" });
 
     res.status(200).type("application/x-ndjson").set("Cache-Control", "no-store");
     const emit = (e: DemoEvent) => {
       if (!res.writableEnded) res.write(JSON.stringify({ ...e, at: Date.now() }) + "\n");
     };
-    const job = queue.then(() => run(m, url, emit)).catch((e) => emit({ type: "error", message: e instanceof Error ? e.message : String(e) }));
+    const job = queue
+      .then(() => run(m, url, emit))
+      .catch((e) => {
+        // Details (RPC URLs, provider errors) stay in the server log; visitors get a generic message.
+        log.error({ err: e instanceof Error ? e.message : String(e), method: m.id }, "demo run failed");
+        emit({ type: "error", message: "The demo payment failed. Try again, or pick another payment method." });
+      });
     queue = job;
     void job.finally(() => res.end());
   });
@@ -179,17 +204,21 @@ export function mountDemo(app: Express, o: DemoOptions) {
     if (!sameOrigin(req)) return void res.status(403).json({ error: "FORBIDDEN" });
     if (!o.redeem) return void res.status(404).json({ error: "NOT_ENABLED" });
     const r = o.redeem;
+    // Join a redeem that's already queued or running instead of stacking another one.
+    if (redeeming) return void redeeming.then((body) => res.json(body), () => res.status(502).json({ error: "REDEEM_FAILED" }));
+    if (!admit()) return void res.status(429).json({ error: "RATE_LIMITED", message: "The demo is busy; try again in a few minutes" });
     const job = queue.then(async () => {
       const t = performance.now();
       const out = await redeemDue(r.chain, r.ledger, new RpcSessionReader(r.chain.rpc, 0), r.seller, { minAmount: 1n });
-      return { ms: Math.round(performance.now() - t), redeemed: out.map((x) => ({ session: x.session, amount: x.amount.toString(), tx: x.tx ?? null, explorer: x.tx ? solanaExplorer(x.tx) : null, error: x.error ?? null })) };
+      return { ms: Math.round(performance.now() - t), redeemed: out.map((x) => ({ session: x.session, amount: x.amount.toString(), tx: x.tx ?? null, explorer: x.tx ? solanaExplorer(x.tx) : null, error: x.error ? (x.error.startsWith("session") ? x.error : "redeem failed") : null })) };
     });
-    queue = job.catch(() => {});
+    redeeming = job;
+    queue = job.catch(() => {}).finally(() => (redeeming = null));
     job.then(
       (body) => res.json(body),
       (e) => {
         log.error({ err: e instanceof Error ? e.message : String(e) }, "demo redeem failed");
-        res.status(502).json({ error: "REDEEM_FAILED", message: e instanceof Error ? e.message : String(e) });
+        res.status(502).json({ error: "REDEEM_FAILED" });
       },
     );
   });

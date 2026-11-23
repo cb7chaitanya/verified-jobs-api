@@ -1,3 +1,5 @@
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 /** One payment option from a 402 response (x402 PaymentRequirements). */
@@ -78,6 +80,7 @@ export function choose(accepts: Requirement[], policy: Policy, spentToday: bigin
 export class SpendLog {
   private db: DatabaseSync;
   constructor(path = ":memory:") {
+    if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
     this.db = new DatabaseSync(path);
     this.db.exec("CREATE TABLE IF NOT EXISTS spend (at INTEGER NOT NULL, day TEXT NOT NULL, network TEXT NOT NULL, amount TEXT NOT NULL, url TEXT NOT NULL, receipt TEXT)");
   }
