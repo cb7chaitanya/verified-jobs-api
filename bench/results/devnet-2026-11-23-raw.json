@@ -1,0 +1,52 @@
+{
+  "at": "2026-11-23T14:13:45.989Z",
+  "cluster": "Solana devnet",
+  "program": "E5fA3t5xQkhjSiwrE5EzJ4wgr9fWSbTZzXsVxgKjGy3T",
+  "calls": 100,
+  "pricePerCall": "0.001 USDC",
+  "paceMs": 1000,
+  "note": "Job checks are stubbed, so latency is payment overhead plus local HTTP to a local API, and devnet RPC/confirmation for exact. exact fees were paid by the public x402.org facilitator; session fees by the buyer (open) and the seller (redeem).",
+  "exact": {
+    "facilitator": "https://x402.org/facilitator",
+    "served": 60,
+    "latencyMs": {
+      "p50": 1572,
+      "p95": 2085,
+      "mean": 1632
+    },
+    "onchainTransactions": 100,
+    "feesLamports": "1000100",
+    "sellerReceived": "100000",
+    "expected": "60000",
+    "chargedNotServed": 40,
+    "facilitatorVerify": {
+      "ok": 100
+    },
+    "facilitatorSettle": {
+      "ok": 60,
+      "settlement_pending": 83,
+      "invalid_exact_svm_transaction_simulation_failed": 7
+    },
+    "sampleTx": "https://explorer.solana.com/tx/5WmmAfcGYpJbaxMoL2hzhPMXdv1mGSNGEEeDC2VdXYMJMVdxN1kJSvyjiBPf3EriLoMHsJfejSUqfPwuX8gDVNm?cluster=devnet",
+    "confirmationFallback": "off"
+  },
+  "session": {
+    "served": 100,
+    "latencyMs": {
+      "p50": 8,
+      "p95": 99,
+      "mean": 39
+    },
+    "openMs": 915,
+    "redeemMs": 1210,
+    "onchainTransactions": 2,
+    "feesLamports": "15000",
+    "sellerReceived": "100000",
+    "expected": "100000",
+    "openTx": "https://explorer.solana.com/tx/3ZFztDVoNWvLffrCKPBkjk3MBveESsFe2yE3GCzEmm46TjRY7giBgZm5t1ChVNWnCoB7ayxNRxZBtiP1UXAzVxk5?cluster=devnet",
+    "redeemTx": "https://explorer.solana.com/tx/2y9jVzAzpL7qL1NPeWBMyxLwDmx8Pr7gq6K31W2NDqsqvaAEa1gtqcfgcMdK4WZLh8vdCcijgYTgKpQ1XTXqXd9y?cluster=devnet",
+    "closeTx": "https://explorer.solana.com/tx/fPHTzvuVRMQauWxPcGBmRMkUr1xWFmbZRBt6wCG3NvwrWBE3BjSBMQuwEYzsbjvnMDmtyDispBvCHzqRXGPdFF7?cluster=devnet",
+    "note": "Opening pays rent for the session and vault accounts; the close returned it with the unused deposit."
+  },
+  "balancesMatch": true
+}

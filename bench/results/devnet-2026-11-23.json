@@ -1,0 +1,52 @@
+{
+  "at": "2026-11-23T14:49:19.022Z",
+  "cluster": "Solana devnet",
+  "program": "E5fA3t5xQkhjSiwrE5EzJ4wgr9fWSbTZzXsVxgKjGy3T",
+  "calls": 100,
+  "pricePerCall": "0.001 USDC",
+  "paceMs": 1000,
+  "note": "Job checks are stubbed, so latency is payment overhead plus local HTTP to a local API, and devnet RPC/confirmation for exact. exact fees were paid by the public x402.org facilitator; session fees by the buyer (open) and the seller (redeem).",
+  "exact": {
+    "facilitator": "https://x402.org/facilitator",
+    "served": 100,
+    "latencyMs": {
+      "p50": 1853,
+      "p95": 3396,
+      "mean": 2173
+    },
+    "onchainTransactions": 100,
+    "feesLamports": "1000100",
+    "sellerReceived": "100000",
+    "expected": "100000",
+    "chargedNotServed": 0,
+    "confirmationFallback": "on",
+    "recoveredOnChain": 51,
+    "facilitatorVerify": {
+      "ok": 100
+    },
+    "facilitatorSettle": {
+      "ok": 49,
+      "settlement_pending": 51
+    },
+    "sampleTx": "https://explorer.solana.com/tx/cVdjr48EYvFhBJNBCREwTqqjk3p4y2oSXH8osG1vYVU2efhStDcZPWB1Vzy8VyGCXb5ZJxaVo6pNC18TAUG5ayA?cluster=devnet"
+  },
+  "session": {
+    "served": 100,
+    "latencyMs": {
+      "p50": 9,
+      "p95": 94,
+      "mean": 37
+    },
+    "openMs": 1101,
+    "redeemMs": 889,
+    "onchainTransactions": 2,
+    "feesLamports": "15000",
+    "sellerReceived": "100000",
+    "expected": "100000",
+    "openTx": "https://explorer.solana.com/tx/hE7BMn6WT1hqVD86S31AsjQfKMyKo35e1h2Mc2FryiVhYiYCMYDgMqnc4PqoHvura9TubMosm28r6v1L3b3d99T?cluster=devnet",
+    "redeemTx": "https://explorer.solana.com/tx/3U3jGRaHjyzLofRnkph4Cce48bumvo8UBxNoV2gXHogkP9AJnvuG5aULnT7ygiJ8aypASmUmTnLZC8RKWQ9WXyV9?cluster=devnet",
+    "closeTx": "https://explorer.solana.com/tx/2J5RSjtB6Dxd9Vcy9zVgxxgobq3CWQQxj1HrHUNTRDeWHnFtFXAuoGAtth4KMvKQLEXRFdYEvJFgGTYBs5iCZhhD?cluster=devnet",
+    "note": "Opening pays rent for the session and vault accounts; the close returned it with the unused deposit."
+  },
+  "balancesMatch": true
+}
