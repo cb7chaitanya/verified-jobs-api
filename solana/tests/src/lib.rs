@@ -454,3 +454,22 @@ fn refuses_a_mint_owned_by_a_different_token_program_than_the_one_passed() {
     // Token-2022 mint, but the legacy token program passed in.
     assert!(open_with_mint(&mut e, 32, mint, buyer_token, spl_token::ID).is_err());
 }
+
+#[test]
+fn pays_out_only_to_a_token_account_the_seller_owns() {
+    let mut e = setup();
+    let s = open(&mut e, 40, DEPOSIT, HOUR).unwrap();
+    let (sig, msg) = signed_receipt(&e, &e.agent, &s, USDC);
+    let mut ix = redeem_ix(&e, &s, &e.seller.pubkey(), USDC);
+    // Point the payout at the buyer's token account instead of the seller's.
+    let (seller_token, buyer_token) = (e.seller_token, e.buyer_token);
+    for m in ix.accounts.iter_mut() {
+        if m.pubkey == seller_token {
+            m.pubkey = buyer_token;
+        }
+    }
+    let ixs = [ed25519_ix(&e.agent.pubkey(), &sig, &msg, u16::MAX), ix];
+    let seller = e.seller.insecure_clone();
+    assert_err(send(&mut e.svm, &ixs, &seller, &[]), "ConstraintTokenOwner");
+    assert_eq!(session_state(&e, &s).redeemed, 0);
+}

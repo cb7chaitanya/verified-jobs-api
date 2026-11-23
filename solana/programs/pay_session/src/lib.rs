@@ -62,8 +62,8 @@ pub mod pay_session {
         require!(deposit > 0, SessionError::ZeroAmount);
         let clock = Clock::get()?;
         let now = clock.unix_timestamp;
-        require!(expires_at >= now + MIN_DURATION_SECS, SessionError::DurationTooShort);
-        require!(expires_at <= now + MAX_DURATION_SECS, SessionError::DurationTooLong);
+        require!(expires_at >= now.checked_add(MIN_DURATION_SECS).ok_or(SessionError::Overflow)?, SessionError::DurationTooShort);
+        require!(expires_at <= now.checked_add(MAX_DURATION_SECS).ok_or(SessionError::Overflow)?, SessionError::DurationTooLong);
         require_keys_neq!(ctx.accounts.buyer.key(), ctx.accounts.seller.key(), SessionError::BuyerIsSeller);
 
         let s = &mut ctx.accounts.session;
@@ -128,7 +128,7 @@ pub mod pay_session {
         let expected = receipt_message(&crate::ID, &session_key, s.opened_slot, cumulative);
         verify_preceding_ed25519(&ctx.accounts.instructions, &s.signer, &expected)?;
 
-        let amount = cumulative - s.redeemed;
+        let amount = cumulative.checked_sub(s.redeemed).ok_or(SessionError::Overflow)?;
         let nonce = s.nonce.to_le_bytes();
         let seeds: &[&[u8]] = &[b"session", s.buyer.as_ref(), s.seller.as_ref(), &nonce, &[s.bump]];
         token_interface::transfer_checked(
@@ -288,7 +288,8 @@ pub struct Redeem<'info> {
     pub mint: InterfaceAccount<'info, Mint>,
     #[account(mut, seeds = [b"vault", session.key().as_ref()], bump = session.vault_bump)]
     pub vault: InterfaceAccount<'info, TokenAccount>,
-    #[account(mut, token::mint = mint, token::token_program = token_program)]
+    /// Payouts go only to a token account the seller owns.
+    #[account(mut, token::mint = mint, token::authority = seller, token::token_program = token_program)]
     pub seller_token: InterfaceAccount<'info, TokenAccount>,
     pub token_program: Interface<'info, TokenInterface>,
     /// CHECK: the instructions sysvar, checked by address.
