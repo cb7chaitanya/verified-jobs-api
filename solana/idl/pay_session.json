@@ -464,6 +464,11 @@
       "code": 6013,
       "name": "Overflow",
       "msg": "Arithmetic overflow"
+    },
+    {
+      "code": 6014,
+      "name": "UnsupportedMint",
+      "msg": "Mints with Token-2022 extensions aren't supported"
     }
   ],
   "types": [

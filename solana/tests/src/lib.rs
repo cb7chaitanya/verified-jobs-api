@@ -370,3 +370,87 @@ fn a_reopened_session_does_not_accept_receipts_from_its_earlier_lifetime() {
     redeem(&mut e, &s, USDC).unwrap();
     assert_eq!(balance(&e.svm, &e.seller_token), 3 * USDC);
 }
+
+// --- Token-2022 mints, built directly as account data (no extra crates needed) ---
+
+const TOKEN_2022: Pubkey = solana_sdk::pubkey!("TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb");
+
+/// An initialized mint (82 bytes), optionally followed by Token-2022's account-type byte and one
+/// MintCloseAuthority extension (type 3) — the shape of any mint that carries extensions.
+fn token_2022_mint(svm: &mut LiteSVM, authority: &Pubkey, with_extension: bool) -> Pubkey {
+    let mut d = vec![0u8; 82];
+    d[0..4].copy_from_slice(&1u32.to_le_bytes());
+    d[4..36].copy_from_slice(authority.as_ref());
+    d[36..44].copy_from_slice(&(100 * USDC).to_le_bytes());
+    d[44] = 6;
+    d[45] = 1;
+    if with_extension {
+        d.resize(165, 0);
+        d.push(1); // AccountType::Mint
+        d.extend_from_slice(&3u16.to_le_bytes());
+        d.extend_from_slice(&32u16.to_le_bytes());
+        d.extend_from_slice(authority.as_ref());
+    }
+    let mint = Pubkey::new_unique();
+    let lamports = svm.minimum_balance_for_rent_exemption(d.len());
+    svm.set_account(mint, solana_sdk::account::Account { lamports, data: d, owner: TOKEN_2022, executable: false, rent_epoch: 0 }).unwrap();
+    mint
+}
+
+/// An initialized Token-2022 token account (165 bytes, no extensions) holding `amount`.
+fn token_2022_account(svm: &mut LiteSVM, mint: &Pubkey, owner: &Pubkey, amount: u64) -> Pubkey {
+    let mut d = vec![0u8; 165];
+    d[0..32].copy_from_slice(mint.as_ref());
+    d[32..64].copy_from_slice(owner.as_ref());
+    d[64..72].copy_from_slice(&amount.to_le_bytes());
+    d[108] = 1; // AccountState::Initialized
+    let acct = Pubkey::new_unique();
+    let lamports = svm.minimum_balance_for_rent_exemption(d.len());
+    svm.set_account(acct, solana_sdk::account::Account { lamports, data: d, owner: TOKEN_2022, executable: false, rent_epoch: 0 }).unwrap();
+    acct
+}
+
+fn open_with_mint(e: &mut Env, nonce: u64, mint: Pubkey, buyer_token: Pubkey, token_program: Pubkey) -> Result<Pubkey, String> {
+    let (session, vault) = pdas(e, nonce);
+    let ix = Instruction {
+        program_id: pay_session::ID,
+        accounts: pay_session::accounts::OpenSession { buyer: e.buyer.pubkey(), seller: e.seller.pubkey(), mint, buyer_token, session, vault, token_program, system_program: solana_sdk::system_program::ID }
+            .to_account_metas(None),
+        data: pay_session::instruction::OpenSession { nonce, deposit: USDC, expires_at: now(&e.svm) + HOUR, signer: e.agent.pubkey() }.data(),
+    };
+    let buyer = e.buyer.insecure_clone();
+    send(&mut e.svm, &[ix], &buyer, &[]).map(|_| session)
+}
+
+#[test]
+fn refuses_mints_with_token_2022_extensions() {
+    let mut e = setup();
+    let buyer = e.buyer.pubkey();
+    let mint = token_2022_mint(&mut e.svm, &buyer, true);
+    let buyer_token = token_2022_account(&mut e.svm, &mint, &buyer, 10 * USDC);
+    assert_err(open_with_mint(&mut e, 30, mint, buyer_token, TOKEN_2022).map(|_| ()), "UnsupportedMint");
+}
+
+#[test]
+fn accepts_a_token_2022_mint_without_extensions() {
+    let mut e = setup();
+    let buyer = e.buyer.pubkey();
+    let mint = token_2022_mint(&mut e.svm, &buyer, false);
+    let buyer_token = token_2022_account(&mut e.svm, &mint, &buyer, 10 * USDC);
+    let session = open_with_mint(&mut e, 31, mint, buyer_token, TOKEN_2022).unwrap();
+    let (_, vault) = pdas(&e, 31);
+    let v = e.svm.get_account(&vault).unwrap();
+    assert_eq!(v.owner, TOKEN_2022);
+    assert_eq!(u64::from_le_bytes(v.data[64..72].try_into().unwrap()), USDC); // token amount
+    assert_eq!(session_state(&e, &session).mint, mint);
+}
+
+#[test]
+fn refuses_a_mint_owned_by_a_different_token_program_than_the_one_passed() {
+    let mut e = setup();
+    let buyer = e.buyer.pubkey();
+    let mint = token_2022_mint(&mut e.svm, &buyer, false);
+    let buyer_token = token_2022_account(&mut e.svm, &mint, &buyer, 10 * USDC);
+    // Token-2022 mint, but the legacy token program passed in.
+    assert!(open_with_mint(&mut e, 32, mint, buyer_token, spl_token::ID).is_err());
+}

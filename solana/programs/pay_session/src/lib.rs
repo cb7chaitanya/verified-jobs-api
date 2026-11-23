@@ -36,6 +36,10 @@ pub const RECEIPT_LEN: usize = 16 + 32 + 32 + 8 + 8;
 pub const MIN_DURATION_SECS: i64 = 15 * 60;
 /// And at most this long, so deposits can't be locked away indefinitely.
 pub const MAX_DURATION_SECS: i64 = 30 * 24 * 60 * 60;
+/// Size of a mint with no extensions (SPL Token, or Token-2022 without extensions). Extension mints
+/// are refused: a permanent delegate or close authority could drain or brick the vault, a transfer
+/// fee would make `deposit` overstate the vault, and a transfer hook could later block payouts.
+pub const BASE_MINT_LEN: usize = 82;
 
 /// `opened_slot` identifies one lifetime of a session address. A session PDA can be closed and
 /// re-opened with the same seeds; without it, receipts from the earlier lifetime would be valid
@@ -248,6 +252,10 @@ pub struct OpenSession<'info> {
     pub buyer: Signer<'info>,
     /// CHECK: only recorded as the payee; it never signs here.
     pub seller: UncheckedAccount<'info>,
+    #[account(
+        mint::token_program = token_program,
+        constraint = mint.to_account_info().data_len() == BASE_MINT_LEN @ SessionError::UnsupportedMint,
+    )]
     pub mint: InterfaceAccount<'info, Mint>,
     #[account(mut, token::mint = mint, token::authority = buyer, token::token_program = token_program)]
     pub buyer_token: InterfaceAccount<'info, TokenAccount>,
@@ -362,4 +370,6 @@ pub enum SessionError {
     WrongReceipt,
     #[msg("Arithmetic overflow")]
     Overflow,
+    #[msg("Mints with Token-2022 extensions aren't supported")]
+    UnsupportedMint,
 }
