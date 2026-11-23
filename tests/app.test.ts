@@ -86,6 +86,19 @@ describe("payments", () => {
     expect(fac.verifies + fac.settles).toBe(0);
   });
 
+  it("browsers on any site can call the API and read the x402 headers, with no preflight work done", async () => {
+    const { base, fac, calls } = await start(async () => OPEN);
+    const pre = await fetch(`${base}/v1/verify?url=${target}`, { method: "OPTIONS", headers: { origin: "https://any.example", "access-control-request-headers": "payment-signature" } });
+    expect(pre.status).toBe(204);
+    expect(pre.headers.get("access-control-allow-headers")).toMatch(/PAYMENT-SIGNATURE/);
+    const r = await fetch(`${base}/v1/verify?url=${target}`, { headers: { origin: "https://any.example" } });
+    expect(r.status).toBe(402);
+    expect(r.headers.get("access-control-allow-origin")).toBe("*");
+    expect(r.headers.get("access-control-expose-headers")).toMatch(/PAYMENT-REQUIRED/);
+    expect(fac.verifies + fac.settles).toBe(0);
+    expect(calls).toEqual([]);
+  });
+
   it("no payment → 402 with USDC payment instructions; the job board is never contacted", async () => {
     const { base, calls } = await start(async () => OPEN);
     const { first, required } = await payFor(base);

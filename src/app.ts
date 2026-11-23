@@ -44,6 +44,19 @@ export function jsonErrors(err: unknown, _req: Request, res: Response, next: Nex
 export function createApp(deps: AppDeps) {
   const app = express();
   app.disable("x-powered-by");
+  // The public API can be called from any web page (an x402 client in the browser): no cookies or
+  // ambient credentials are involved, payment travels in headers, so a wildcard origin is safe here.
+  app.use(["/v1", "/health", "/.well-known"], (req, res, next) => {
+    res.set({
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, PAYMENT-SIGNATURE",
+      "Access-Control-Expose-Headers": "PAYMENT-REQUIRED, PAYMENT-RESPONSE",
+      "Access-Control-Max-Age": "600",
+    });
+    if (req.method === "OPTIONS") return void res.status(204).end();
+    next();
+  });
   const cacheMs = deps.cacheMs ?? 10 * 60_000;
   const now = deps.now ?? Date.now;
   const cache = new Map<string, { at: number; value: Verification }>();
