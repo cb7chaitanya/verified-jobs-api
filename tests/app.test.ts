@@ -135,4 +135,18 @@ describe("payments", () => {
     expect(r.status).toBe(402);
     expect(JSON.stringify(await r.json())).not.toContain("ATS_DETAIL_ACTIVE");
   });
+
+  it("malformed input gets a JSON 4xx with no stack trace or internal paths", async () => {
+    const { base, fac } = await start(async () => OPEN);
+    const bad = await fetch(`${base}/v1/verify?url=${encodeURIComponent("https://jobs.ashbyhq.com/%ZZ/1")}`);
+    expect(bad.status).toBe(400);
+    const badBody = await bad.text();
+    expect(JSON.parse(badBody)).toMatchObject({ error: "INVALID_URL" });
+    const big = await fetch(`${base}/v1/feedback`, { method: "POST", headers: { "content-type": "application/json" }, body: "x".repeat(17 * 1024) });
+    expect(big.status).toBe(413);
+    const bigBody = await big.text();
+    expect(JSON.parse(bigBody)).toEqual({ error: "PAYLOAD_TOO_LARGE" });
+    for (const body of [badBody, bigBody]) expect(body).not.toMatch(/at |node_modules|\.ts:|Error:/);
+    expect(fac.verifies).toBe(0);
+  });
 });

@@ -14,6 +14,7 @@ import type { Address, KeyPairSigner } from "@solana/kit";
 import { BuyerAgent, type Payer } from "../buyer/agent";
 import { SpendLog, type Policy } from "../buyer/policy";
 import { log } from "../core/log";
+import { jsonErrors } from "../app";
 import type { Ledger } from "../ledger";
 import type { connect } from "../session/chain";
 import { RpcSessionReader } from "../session/chain";
@@ -192,6 +193,8 @@ export function mountDemo(app: Express, o: DemoOptions) {
       },
     );
   });
+
+  app.use(jsonErrors);
 
   async function run(m: DemoMethod, url: string, emit: (e: DemoEvent) => void) {
     const started = performance.now();

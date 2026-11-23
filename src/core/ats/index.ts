@@ -55,7 +55,13 @@ export function parseAtsUrl(input: string): AtsRef | null {
     return { kind: "LEVER", identifier: `${eu ? "eu:" : ""}${parts[0]}`, externalId: parts[1] && parts[1] !== "apply" ? parts[1] : null };
   }
   if (host === "jobs.ashbyhq.com" && parts[0]) {
-    return { kind: "ASHBY", identifier: decodeURIComponent(parts[0]), externalId: parts[1] && parts[1] !== "application" ? parts[1] : null };
+    let identifier: string;
+    try {
+      identifier = decodeURIComponent(parts[0]);
+    } catch {
+      return null; // malformed percent-escape: not a posting URL
+    }
+    return { kind: "ASHBY", identifier, externalId: parts[1] && parts[1] !== "application" ? parts[1] : null };
   }
   if (host === "apply.workable.com" && parts[0]) {
     if (parts[0] === "j") return null; // the short form carries no account

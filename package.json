@@ -9,7 +9,7 @@
   },
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "start": "tsx src/server.ts",
+    "start": "NODE_ENV=production tsx src/server.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "session": "tsx src/cli/session.ts",

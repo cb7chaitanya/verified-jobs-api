@@ -28,6 +28,19 @@ export interface AppDeps {
 const VERIFY_ROUTE = "GET /v1/verify";
 const ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#1f6feb"/><path d="M18 33l9 9 19-20" stroke="#fff" stroke-width="6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
+/**
+ * Last-resort error handler: a JSON code, never a stack trace or internal path (Express's default
+ * handler sends err.stack whenever NODE_ENV isn't "production"). Register it after the routes it covers.
+ */
+export function jsonErrors(err: unknown, _req: Request, res: Response, next: NextFunction) {
+  if (res.headersSent) return next(err);
+  const e = err as { status?: unknown; statusCode?: unknown; type?: unknown };
+  const status = typeof e.status === "number" ? e.status : typeof e.statusCode === "number" ? e.statusCode : 500;
+  const code = status === 413 ? "PAYLOAD_TOO_LARGE" : status === 415 ? "UNSUPPORTED_MEDIA_TYPE" : status >= 400 && status < 500 ? "BAD_REQUEST" : "INTERNAL";
+  if (status >= 500) log.error({ err: err instanceof Error ? err.message : String(err) }, "unhandled error");
+  res.status(status >= 400 && status < 600 ? status : 500).json({ error: code });
+}
+
 export function createApp(deps: AppDeps) {
   const app = express();
   app.disable("x-powered-by");
@@ -112,7 +125,9 @@ export function createApp(deps: AppDeps) {
       next();
     } catch (e) {
       if (e instanceof InputError) return void res.status(400).json({ error: e.code, message: e.message });
-      next(e);
+      // Anything else thrown while parsing user input is still bad input, and still free.
+      log.warn({ err: e instanceof Error ? e.message : String(e) }, "unparseable posting URL");
+      res.status(400).json({ error: "INVALID_URL", message: "Not a valid posting URL" });
     }
   });
 
@@ -149,5 +164,6 @@ export function createApp(deps: AppDeps) {
     }
   });
 
+  app.use(jsonErrors);
   return app;
 }
