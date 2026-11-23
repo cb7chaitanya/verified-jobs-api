@@ -473,3 +473,320 @@ fn pays_out_only_to_a_token_account_the_seller_owns() {
     assert_err(send(&mut e.svm, &ixs, &seller, &[]), "ConstraintTokenOwner");
     assert_eq!(session_state(&e, &s).redeemed, 0);
 }
+
+// --- Security test matrix (wrong signer/account, zero and over-limit, time, closure, ed25519 edge cases) ---
+
+fn top_up_ix(e: &Env, session: &Pubkey, buyer: &Pubkey, buyer_token: &Pubkey, amount: u64) -> Instruction {
+    let (vault, _) = Pubkey::find_program_address(&[b"vault", session.as_ref()], &pay_session::ID);
+    Instruction {
+        program_id: pay_session::ID,
+        accounts: pay_session::accounts::TopUp { buyer: *buyer, session: *session, mint: e.mint, buyer_token: *buyer_token, vault, token_program: spl_token::ID }.to_account_metas(None),
+        data: pay_session::instruction::TopUp { amount }.data(),
+    }
+}
+
+/// Ed25519 instruction carrying one signature with independently chosen instruction indexes.
+fn ed25519_ix_indexes(pubkey: &Pubkey, sig: &[u8; 64], msg: &[u8], sig_ix: u16, pk_ix: u16, msg_ix: u16) -> Instruction {
+    let mut d = vec![1u8, 0];
+    for v in [48u16, sig_ix, 16, pk_ix, 112, msg.len() as u16, msg_ix] {
+        d.extend_from_slice(&v.to_le_bytes());
+    }
+    d.extend_from_slice(pubkey.as_ref());
+    d.extend_from_slice(sig);
+    d.extend_from_slice(msg);
+    Instruction { program_id: solana_sdk::ed25519_program::ID, accounts: vec![], data: d }
+}
+
+/// A valid two-signature ed25519 instruction (both signatures verify in the precompile).
+fn ed25519_ix_two(a: (&Pubkey, &[u8; 64], &[u8]), b: (&Pubkey, &[u8; 64], &[u8])) -> Instruction {
+    let header = 2 + 2 * 14;
+    let mut body = Vec::new();
+    let mut offsets = Vec::new();
+    for (pk, sig, msg) in [a, b] {
+        let base = (header + body.len()) as u16;
+        let (pk_off, sig_off, msg_off) = (base, base + 32, base + 96);
+        for v in [sig_off, u16::MAX, pk_off, u16::MAX, msg_off, msg.len() as u16, u16::MAX] {
+            offsets.extend_from_slice(&v.to_le_bytes());
+        }
+        body.extend_from_slice(pk.as_ref());
+        body.extend_from_slice(sig.as_ref());
+        body.extend_from_slice(msg);
+    }
+    let mut d = vec![2u8, 0];
+    d.extend_from_slice(&offsets);
+    d.extend_from_slice(&body);
+    Instruction { program_id: solana_sdk::ed25519_program::ID, accounts: vec![], data: d }
+}
+
+fn seller_send(e: &mut Env, ixs: &[Instruction]) -> Result<(), String> {
+    let seller = e.seller.insecure_clone();
+    send(&mut e.svm, ixs, &seller, &[])
+}
+
+#[test]
+fn opening_the_same_session_twice_while_live_fails() {
+    let mut e = setup();
+    open(&mut e, 50, DEPOSIT, HOUR).unwrap();
+    assert!(open(&mut e, 50, DEPOSIT, HOUR).is_err());
+}
+
+#[test]
+fn buyer_and_seller_must_differ() {
+    let mut e = setup();
+    e.seller = e.buyer.insecure_clone();
+    assert_err(open(&mut e, 51, DEPOSIT, HOUR).map(|_| ()), "BuyerIsSeller");
+}
+
+#[test]
+fn duration_limits_are_inclusive() {
+    let mut e = setup();
+    assert!(open(&mut e, 52, DEPOSIT, 15 * 60).is_ok());
+    assert!(open(&mut e, 53, DEPOSIT, 30 * 24 * HOUR).is_ok());
+    assert_err(open(&mut e, 54, DEPOSIT, 30 * 24 * HOUR + 1).map(|_| ()), "DurationTooLong");
+}
+
+#[test]
+fn top_up_rejects_strangers_zero_amounts_and_expired_sessions() {
+    let mut e = setup();
+    let s = open(&mut e, 55, DEPOSIT, HOUR).unwrap();
+    // A stranger topping up someone else's session.
+    let stranger = Keypair::new();
+    e.svm.airdrop(&stranger.pubkey(), 1_000_000_000).unwrap();
+    let payer = e.buyer.insecure_clone();
+    let (mint, sp) = (e.mint, stranger.pubkey());
+    let stranger_token = token_account(&mut e.svm, &payer, &mint, &sp);
+    let ix = top_up_ix(&e, &s, &stranger.pubkey(), &stranger_token, USDC);
+    assert_err(send(&mut e.svm, &[ix], &stranger, &[]), "Unauthorized");
+    // Zero.
+    let buyer = e.buyer.insecure_clone();
+    let ix = top_up_ix(&e, &s, &e.buyer.pubkey(), &e.buyer_token, 0);
+    assert_err(send(&mut e.svm, &[ix], &buyer, &[]), "ZeroAmount");
+    // After expiry.
+    warp(&mut e.svm, HOUR);
+    let ix = top_up_ix(&e, &s, &e.buyer.pubkey(), &e.buyer_token, USDC);
+    assert_err(send(&mut e.svm, &[ix], &buyer, &[]), "Expired");
+    assert_eq!(session_state(&e, &s).deposit, DEPOSIT);
+}
+
+#[test]
+fn redeem_of_zero_is_refused() {
+    let mut e = setup();
+    let s = open(&mut e, 56, DEPOSIT, HOUR).unwrap();
+    assert_err(redeem(&mut e, &s, 0), "NotIncreasing");
+}
+
+#[test]
+fn redeem_refuses_a_different_mint() {
+    let mut e = setup();
+    let s = open(&mut e, 57, DEPOSIT, HOUR).unwrap();
+    let other = Keypair::new();
+    let payer = e.buyer.insecure_clone();
+    let rent = e.svm.minimum_balance_for_rent_exemption(spl_token::state::Mint::LEN);
+    send(
+        &mut e.svm,
+        &[
+            system_instruction::create_account(&payer.pubkey(), &other.pubkey(), rent, spl_token::state::Mint::LEN as u64, &spl_token::ID),
+            spl_token::instruction::initialize_mint2(&spl_token::ID, &other.pubkey(), &payer.pubkey(), None, 6).unwrap(),
+        ],
+        &payer,
+        &[&other],
+    )
+    .unwrap();
+    let (sig, msg) = signed_receipt(&e, &e.agent, &s, USDC);
+    let mut ix = redeem_ix(&e, &s, &e.seller.pubkey(), USDC);
+    let mint = e.mint;
+    for m in ix.accounts.iter_mut() {
+        if m.pubkey == mint {
+            m.pubkey = other.pubkey();
+        }
+    }
+    assert_err({ let ed = ed25519_ix(&e.agent.pubkey(), &sig, &msg, u16::MAX); seller_send(&mut e, &[ed, ix]) }, "ConstraintHasOne");
+}
+
+#[test]
+fn close_refuses_a_wrong_buyer_or_a_wrong_refund_account() {
+    let mut e = setup();
+    let s = open(&mut e, 58, DEPOSIT, HOUR).unwrap();
+    let mut ix = close_ix(&e, &s, &e.seller.pubkey());
+    let buyer = e.buyer.pubkey();
+    for m in ix.accounts.iter_mut() {
+        if m.pubkey == buyer {
+            m.pubkey = Pubkey::new_unique();
+        }
+    }
+    assert_err(seller_send(&mut e, &[ix]), "Unauthorized");
+    let mut ix = close_ix(&e, &s, &e.seller.pubkey());
+    let (buyer_token, seller_token) = (e.buyer_token, e.seller_token);
+    for m in ix.accounts.iter_mut() {
+        if m.pubkey == buyer_token {
+            m.pubkey = seller_token;
+        }
+    }
+    assert_err(seller_send(&mut e, &[ix]), "ConstraintTokenOwner");
+}
+
+#[test]
+fn closing_removes_both_accounts_and_returns_tokens_and_rent_to_the_buyer() {
+    let mut e = setup();
+    let s = open(&mut e, 59, DEPOSIT, HOUR).unwrap();
+    let (_, vault) = pdas(&e, 59);
+    redeem(&mut e, &s, USDC).unwrap();
+    // Tokens sent straight into the vault by anyone are swept to the buyer too.
+    let buyer = e.buyer.insecure_clone();
+    let t = spl_token::instruction::transfer(&spl_token::ID, &e.buyer_token, &vault, &e.buyer.pubkey(), &[], USDC).unwrap();
+    send(&mut e.svm, &[t], &buyer, &[]).unwrap();
+    let rent = e.svm.get_account(&s).unwrap().lamports + e.svm.get_account(&vault).unwrap().lamports;
+    let buyer_lamports = e.svm.get_account(&e.buyer.pubkey()).unwrap().lamports;
+    let tokens_before = balance(&e.svm, &e.buyer_token);
+    let ix = close_ix(&e, &s, &e.seller.pubkey());
+    seller_send(&mut e, &[ix]).unwrap();
+    for gone in [s, vault] {
+        let a = e.svm.get_account(&gone);
+        assert!(a.as_ref().map_or(true, |a| a.lamports == 0 && a.data.is_empty() && a.owner == solana_sdk::system_program::ID), "{gone} not fully closed");
+    }
+    assert_eq!(balance(&e.svm, &e.buyer_token), tokens_before + (DEPOSIT - USDC) + USDC);
+    assert_eq!(e.svm.get_account(&e.buyer.pubkey()).unwrap().lamports, buyer_lamports + rent);
+}
+
+#[test]
+fn a_receipt_for_one_amount_cannot_redeem_another() {
+    let mut e = setup();
+    let s = open(&mut e, 60, DEPOSIT, HOUR).unwrap();
+    let (sig, msg) = signed_receipt(&e, &e.agent, &s, USDC);
+    let ixs = [ed25519_ix(&e.agent.pubkey(), &sig, &msg, u16::MAX), redeem_ix(&e, &s, &e.seller.pubkey(), 2 * USDC)];
+    assert_err(seller_send(&mut e, &ixs), "WrongReceipt");
+}
+
+#[test]
+fn the_signature_instruction_must_carry_exactly_one_signature() {
+    let mut e = setup();
+    let s = open(&mut e, 61, DEPOSIT, HOUR).unwrap();
+    let (sig, msg) = signed_receipt(&e, &e.agent, &s, USDC);
+    let other = Keypair::new();
+    let other_msg = b"unrelated".to_vec();
+    let other_sig: [u8; 64] = other.sign_message(&other_msg).as_ref().try_into().unwrap();
+    let ixs = [ed25519_ix_two((&e.agent.pubkey(), &sig, &msg), (&other.pubkey(), &other_sig, &other_msg)), redeem_ix(&e, &s, &e.seller.pubkey(), USDC)];
+    assert_err(seller_send(&mut e, &ixs), "BadSignatureInstruction");
+}
+
+#[test]
+fn the_signature_instruction_must_be_immediately_before_redeem() {
+    let mut e = setup();
+    let s = open(&mut e, 62, DEPOSIT, HOUR).unwrap();
+    let (sig, msg) = signed_receipt(&e, &e.agent, &s, USDC);
+    let between = system_instruction::transfer(&e.seller.pubkey(), &e.seller.pubkey(), 1);
+    let ixs = [ed25519_ix(&e.agent.pubkey(), &sig, &msg, u16::MAX), between, redeem_ix(&e, &s, &e.seller.pubkey(), USDC)];
+    assert_err(seller_send(&mut e, &ixs), "MissingSignatureInstruction");
+}
+
+#[test]
+fn a_truncated_signed_message_is_refused() {
+    let mut e = setup();
+    let s = open(&mut e, 63, DEPOSIT, HOUR).unwrap();
+    let (_, msg) = signed_receipt(&e, &e.agent, &s, USDC);
+    let short = msg[..msg.len() - 1].to_vec();
+    let sig: [u8; 64] = e.agent.sign_message(&short).as_ref().try_into().unwrap();
+    let ixs = [ed25519_ix(&e.agent.pubkey(), &sig, &short, u16::MAX), redeem_ix(&e, &s, &e.seller.pubkey(), USDC)];
+    assert_err(seller_send(&mut e, &ixs), "WrongReceipt");
+}
+
+#[test]
+fn every_signature_offset_must_point_into_the_same_instruction() {
+    let mut e = setup();
+    let s = open(&mut e, 64, DEPOSIT, HOUR).unwrap();
+    let (sig, msg) = signed_receipt(&e, &e.agent, &s, USDC);
+    // Only the message index points elsewhere (instruction 0, which is itself here, so the precompile passes).
+    let ixs = [ed25519_ix_indexes(&e.agent.pubkey(), &sig, &msg, u16::MAX, u16::MAX, 0), redeem_ix(&e, &s, &e.seller.pubkey(), USDC)];
+    assert_err(seller_send(&mut e, &ixs), "BadSignatureInstruction");
+}
+
+// --- Hostile inputs (Trail of Bits Solana patterns) ---
+
+#[test]
+fn refuses_a_substituted_token_program() {
+    let mut e = setup();
+    let s = open(&mut e, 70, DEPOSIT, HOUR).unwrap();
+    let (sig, msg) = signed_receipt(&e, &e.agent, &s, USDC);
+    let mut ix = redeem_ix(&e, &s, &e.seller.pubkey(), USDC);
+    for m in ix.accounts.iter_mut() {
+        if m.pubkey == spl_token::ID {
+            m.pubkey = Pubkey::new_unique();
+        }
+    }
+    assert!({ let ed = ed25519_ix(&e.agent.pubkey(), &sig, &msg, u16::MAX); seller_send(&mut e, &[ed, ix]) }.is_err());
+    assert_eq!(balance(&e.svm, &e.seller_token), 0);
+}
+
+#[test]
+fn refuses_a_spoofed_instructions_sysvar() {
+    let mut e = setup();
+    let s = open(&mut e, 71, DEPOSIT, HOUR).unwrap();
+    let (sig, msg) = signed_receipt(&e, &e.agent, &s, USDC);
+    let mut ix = redeem_ix(&e, &s, &e.seller.pubkey(), USDC);
+    for m in ix.accounts.iter_mut() {
+        if m.pubkey == sysvar::instructions::ID {
+            m.pubkey = Pubkey::new_unique();
+        }
+    }
+    assert!({ let ed = ed25519_ix(&e.agent.pubkey(), &sig, &msg, u16::MAX); seller_send(&mut e, &[ed, ix]) }.is_err());
+    assert_eq!(balance(&e.svm, &e.seller_token), 0);
+}
+
+#[test]
+fn one_signature_instruction_cannot_authorise_two_redeems() {
+    let mut e = setup();
+    let s = open(&mut e, 72, DEPOSIT, HOUR).unwrap();
+    let (sig, msg) = signed_receipt(&e, &e.agent, &s, USDC);
+    let ixs = [ed25519_ix(&e.agent.pubkey(), &sig, &msg, u16::MAX), redeem_ix(&e, &s, &e.seller.pubkey(), USDC), redeem_ix(&e, &s, &e.seller.pubkey(), 2 * USDC)];
+    assert_err(seller_send(&mut e, &ixs), "MissingSignatureInstruction");
+    assert_eq!(balance(&e.svm, &e.seller_token), 0);
+}
+
+#[test]
+fn refuses_another_sessions_vault() {
+    let mut e = setup();
+    let s = open(&mut e, 73, DEPOSIT, HOUR).unwrap();
+    let other = open(&mut e, 74, DEPOSIT, HOUR).unwrap();
+    let (vault, _) = Pubkey::find_program_address(&[b"vault", s.as_ref()], &pay_session::ID);
+    let (other_vault, _) = Pubkey::find_program_address(&[b"vault", other.as_ref()], &pay_session::ID);
+    let (sig, msg) = signed_receipt(&e, &e.agent, &s, USDC);
+    let mut ix = redeem_ix(&e, &s, &e.seller.pubkey(), USDC);
+    for m in ix.accounts.iter_mut() {
+        if m.pubkey == vault {
+            m.pubkey = other_vault;
+        }
+    }
+    assert_err({ let ed = ed25519_ix(&e.agent.pubkey(), &sig, &msg, u16::MAX); seller_send(&mut e, &[ed, ix]) }, "ConstraintSeeds");
+}
+
+/// Compute units per instruction, printed with `cargo test -- --nocapture zz_cu_summary`.
+#[test]
+fn zz_cu_summary() {
+    let mut e = setup();
+    let cu = |svm: &mut LiteSVM, ixs: &[Instruction], payer: &Keypair| -> u64 {
+        let tx = Transaction::new_signed_with_payer(ixs, Some(&payer.pubkey()), &[payer], svm.latest_blockhash());
+        let m = svm.send_transaction(tx).expect("tx");
+        svm.expire_blockhash();
+        m.compute_units_consumed
+    };
+    let (session, vault) = pdas(&e, 80);
+    let buyer = e.buyer.insecure_clone();
+    let open_ix = Instruction {
+        program_id: pay_session::ID,
+        accounts: pay_session::accounts::OpenSession { buyer: e.buyer.pubkey(), seller: e.seller.pubkey(), mint: e.mint, buyer_token: e.buyer_token, session, vault, token_program: spl_token::ID, system_program: solana_sdk::system_program::ID }.to_account_metas(None),
+        data: pay_session::instruction::OpenSession { nonce: 80, deposit: DEPOSIT, expires_at: now(&e.svm) + HOUR, signer: e.agent.pubkey() }.data(),
+    };
+    let open_cu = cu(&mut e.svm, &[open_ix], &buyer);
+    let top = [top_up_ix(&e, &session, &e.buyer.pubkey(), &e.buyer_token, USDC)];
+    let top_cu = cu(&mut e.svm, &top, &buyer);
+    let (sig, msg) = signed_receipt(&e, &e.agent, &session, USDC);
+    let seller = e.seller.insecure_clone();
+    let red = [ed25519_ix(&e.agent.pubkey(), &sig, &msg, u16::MAX), redeem_ix(&e, &session, &e.seller.pubkey(), USDC)];
+    let redeem_cu = cu(&mut e.svm, &red, &seller);
+    let close = [close_ix(&e, &session, &e.seller.pubkey())];
+    let close_cu = cu(&mut e.svm, &close, &seller);
+    println!("\n| instruction | compute units |\n|---|---|\n| open_session | {open_cu} |\n| top_up | {top_cu} |\n| redeem (incl. ed25519) | {redeem_cu} |\n| close_session | {close_cu} |");
+    for v in [open_cu, top_cu, redeem_cu, close_cu] {
+        assert!(v < 200_000);
+    }
+}
