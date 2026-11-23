@@ -16,7 +16,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { BatchEvmScheme } from "@circle-fin/x402-batching/client";
 import { ExactSvmScheme } from "@x402/svm/exact/client";
 import { BuyerAgent, schemePayer, sessionPayer, type Payer } from "../buyer/agent";
-import { SpendLog, type Policy } from "../buyer/policy";
+import { SpendLog, USDC, type Policy } from "../buyer/policy";
 import { SessionPayer } from "../session/scheme";
 import { ReceiptSigner } from "../session/protocol";
 import { caip2, connect } from "../session/chain";
@@ -30,12 +30,16 @@ interface PolicyFile {
   allowedHosts: string[];
   networks: string[];
   payees: Record<string, string>;
+  /** Token to pay in per network; defaults to USDC on the networks in buyer/policy.ts. */
+  assets?: Record<string, string>;
   maxPerCallUsdc: string;
   dailyCapUsdc: string;
 }
 
 const pf = JSON.parse(readFileSync(arg("policy", "./policy.json"), "utf8")) as PolicyFile;
-const policy: Policy = { allowedHosts: pf.allowedHosts, networks: pf.networks, payees: pf.payees, maxPerCall: usdc(pf.maxPerCallUsdc), dailyCap: usdc(pf.dailyCapUsdc) };
+const assets = Object.fromEntries(pf.networks.map((n) => [n, pf.assets?.[n] ?? USDC[n]]));
+for (const [n, a] of Object.entries(assets)) if (!a) throw new Error(`policy.assets has no token for ${n}; name the mint or contract to pay in`);
+const policy: Policy = { allowedHosts: pf.allowedHosts, networks: pf.networks, payees: pf.payees, assets: assets as Record<string, string>, maxPerCall: usdc(pf.maxPerCallUsdc), dailyCap: usdc(pf.dailyCapUsdc) };
 
 const payers: Payer[] = [];
 if (process.env.EVM_PRIVATE_KEY) payers.push(schemePayer(ARC_TESTNET, new BatchEvmScheme(privateKeyToAccount(process.env.EVM_PRIVATE_KEY as `0x${string}`))));

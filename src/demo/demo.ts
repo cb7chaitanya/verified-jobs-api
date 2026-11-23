@@ -29,6 +29,8 @@ export interface DemoMethod {
   id: MethodId;
   network: string;
   payTo: string;
+  /** Token the agent will pay in (pinned in its policy). */
+  asset: string;
   /** Explorer link for a settlement reference, when there is one to show. */
   explorer?: (tx: string) => string | null;
   /** The payer for one run. May open on-chain state first and report it through `emit`. */
@@ -224,7 +226,7 @@ export function mountDemo(app: Express, o: DemoOptions) {
       return r;
     };
 
-    const policy: Policy = { allowedHosts: [host], networks: [m.network], payees: { [m.network]: m.payTo }, maxPerCall: o.price, dailyCap: o.dailyCap };
+    const policy: Policy = { allowedHosts: [host], networks: [m.network], payees: { [m.network]: m.payTo }, assets: { [m.network]: m.asset }, maxPerCall: o.price, dailyCap: o.dailyCap };
     const agent = new BuyerAgent(policy, [payer], spend, watched);
     await agent.discover(o.selfBase);
     const r = await agent.get(`${o.selfBase}/v1/verify?url=${encodeURIComponent(url)}`);

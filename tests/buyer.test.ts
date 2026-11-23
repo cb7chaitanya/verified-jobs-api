@@ -10,7 +10,7 @@ const ATTACKER = "0xbad0000000000000000000000000000000000bad";
 const HOST = "api.example";
 const POSTING = "https://jobs.lever.co/acme/1";
 
-const policy: Policy = { allowedHosts: [HOST], networks: [ARC, SOL], payees: { [ARC]: SELLER_ARC, [SOL]: SELLER_SOL }, maxPerCall: 5_000n, dailyCap: 2_500n };
+const policy: Policy = { allowedHosts: [HOST], networks: [ARC, SOL], payees: { [ARC]: SELLER_ARC, [SOL]: SELLER_SOL }, assets: { [ARC]: "usdc", [SOL]: "usdc" }, maxPerCall: 5_000n, dailyCap: 2_500n };
 const req = (over: Partial<Requirement> = {}): Requirement => ({ scheme: "exact", network: ARC, asset: "usdc", amount: "1000", payTo: SELLER_ARC, maxTimeoutSeconds: 60, extra: {}, ...over });
 
 /** A scriptable service: decides the 402 it sends and what a paid call returns. */
@@ -64,6 +64,11 @@ describe("spending policy", () => {
     expect(choose([req({ amount: "2000" })], policy, 0n, { [ARC]: 1000n })).toMatchObject({ ok: false, reason: expect.stringMatching(/price changed/) });
     expect(choose([req({ network: "eip155:1", payTo: SELLER_ARC })], policy, 0n)).toMatchObject({ ok: false, reason: expect.stringMatching(/not allowed/) });
     expect(choose([req({ amount: "-5" })], policy, 0n)).toMatchObject({ ok: false });
+    // The token is pinned too: limits are in the pinned token's units.
+    expect(choose([req({ asset: "SomeOtherMint" })], policy, 0n)).toMatchObject({ ok: false, reason: expect.stringMatching(/not the pinned asset/) });
+    expect(choose([req({ asset: undefined as unknown as string })], policy, 0n)).toMatchObject({ ok: false, reason: expect.stringMatching(/not the pinned asset/) });
+    const evm = { ...policy, assets: { ...policy.assets, [ARC]: "0xAbC0000000000000000000000000000000000001" } };
+    expect(choose([req({ asset: "0xabc0000000000000000000000000000000000001" })], evm, 0n)).toMatchObject({ ok: true }); // checksum case ignored
   });
 });
 

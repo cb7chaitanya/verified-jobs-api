@@ -15,6 +15,7 @@ import { SCHEME } from "./session/protocol";
 import { ConfirmingFacilitator, rpcTxSource } from "./exact-confirm";
 import { DemoSession, mountDemo, solanaExplorer, type DemoMethod } from "./demo/demo";
 import { schemePayer, sessionPayer } from "./buyer/agent";
+import { USDC } from "./buyer/policy";
 import { readKeypair, signerFrom, usdc } from "./cli/keys";
 import { BatchEvmScheme } from "@circle-fin/x402-batching/client";
 import { ExactSvmScheme as ExactSvmClient } from "@x402/svm/exact/client";
@@ -88,19 +89,19 @@ if (process.env.DEMO === "1") {
   const atomic = usdc(price.replace(/^\$/, ""));
   if (process.env.EVM_PAY_TO && process.env.DEMO_EVM_PRIVATE_KEY) {
     const p = schemePayer(ARC_TESTNET, new BatchEvmScheme(privateKeyToAccount(process.env.DEMO_EVM_PRIVATE_KEY as `0x${string}`)));
-    methods.push({ id: "gateway", network: ARC_TESTNET, payTo: process.env.EVM_PAY_TO, payer: async () => p });
+    methods.push({ id: "gateway", network: ARC_TESTNET, payTo: process.env.EVM_PAY_TO, asset: USDC[ARC_TESTNET]!, payer: async () => p });
   }
   const buyerKey = process.env.DEMO_SOLANA_KEYPAIR;
   if (process.env.SOLANA_PAY_TO && buyerKey) {
     const p = schemePayer(SOLANA_DEVNET, new ExactSvmClient(await createKeyPairSignerFromBytes(readKeypair(buyerKey)), { rpcUrl: env("SOLANA_RPC_URL", "https://api.devnet.solana.com") }));
-    methods.push({ id: "exact", network: SOLANA_DEVNET, payTo: process.env.SOLANA_PAY_TO, explorer: solanaExplorer, payer: async () => p });
+    methods.push({ id: "exact", network: SOLANA_DEVNET, payTo: process.env.SOLANA_PAY_TO, asset: USDC[SOLANA_DEVNET]!, explorer: solanaExplorer, payer: async () => p });
   }
   let session: DemoSession | undefined;
   if (process.env.SESSION_PAY_TO && buyerKey && sessionChain && sessionNetwork) {
     const net = sessionNetwork;
     session = new DemoSession(sessionChain, await signerFrom(buyerKey), address(process.env.SESSION_PAY_TO), address(env("SESSION_MINT")), usdc(env("DEMO_SESSION_DEPOSIT_USDC", "0.05")), env("DEMO_DIR", "./data"));
     const s = session;
-    methods.push({ id: "session", network: net, payTo: process.env.SESSION_PAY_TO, explorer: () => null, payer: async (emit, p) => sessionPayer(net, await s.get(emit, p)) });
+    methods.push({ id: "session", network: net, payTo: process.env.SESSION_PAY_TO, asset: env("SESSION_MINT"), explorer: () => null, payer: async (emit, p) => sessionPayer(net, await s.get(emit, p)) });
   }
   if (!methods.length) throw new Error("DEMO=1 needs a buyer key: DEMO_EVM_PRIVATE_KEY and/or DEMO_SOLANA_KEYPAIR (testnet only)");
   const sellerKey = process.env.DEMO_SELLER_KEYPAIR;

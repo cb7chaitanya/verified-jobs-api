@@ -113,7 +113,7 @@ const exactApi = await serve(new x402ResourceServer(RAW ? facilitator : confirmi
 const sessionLedger = new Ledger();
 const sessionApi = await serve(new x402ResourceServer(new SessionFacilitator({ network, reader: new RpcSessionReader(chain.rpc), ledger: sessionLedger })).register(network, new SessionServerScheme({ mint: MINT })), "session", sessionLedger);
 
-const policy = (host: string) => ({ allowedHosts: [host], networks: [network], payees: { [network]: seller.address }, maxPerCall: 2_000n, dailyCap: 1_000_000_000n });
+const policy = (host: string) => ({ allowedHosts: [host], networks: [network], payees: { [network]: seller.address }, assets: { [network]: MINT }, maxPerCall: 2_000n, dailyCap: 1_000_000_000n });
 const stats = (xs: number[]) => {
   const s = [...xs].sort((a, b) => a - b);
   const q = (p: number) => s[Math.min(s.length - 1, Math.floor(p * s.length))]!;

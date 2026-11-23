@@ -43,7 +43,7 @@ const server = await new Promise<Server>((r) => {
 });
 const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
-const agent = new BuyerAgent({ allowedHosts: [new URL(base).host], networks: [ARC], payees: { [ARC]: payTo }, maxPerCall: 2_000n, dailyCap: 1_000_000_000n }, [schemePayer(ARC, new BatchEvmScheme(privateKeyToAccount(key)))], new SpendLog());
+const agent = new BuyerAgent({ allowedHosts: [new URL(base).host], networks: [ARC], payees: { [ARC]: payTo }, assets: { [ARC]: "0x3600000000000000000000000000000000000000" }, maxPerCall: 2_000n, dailyCap: 1_000_000_000n }, [schemePayer(ARC, new BatchEvmScheme(privateKeyToAccount(key)))], new SpendLog());
 await agent.discover(base);
 const ms: number[] = [];
 let ok = 0;

@@ -52,7 +52,7 @@ async function start(o: { dailyCap?: bigint; rate?: { max: number; windowMs: num
   const results = mkdtempSync(join(tmpdir(), "demo-bench-"));
   writeFileSync(join(results, "devnet-2026-11-23.json"), JSON.stringify({ calls: 100, exact: { served: 100 } }));
   writeFileSync(join(results, "devnet-2026-11-23-raw.json"), JSON.stringify({ calls: 100, exact: { served: 60 } }));
-  const exact: DemoMethod = { id: "exact", network: SOL, payTo: PAY_TO, explorer: (tx) => `https://explorer.solana.com/tx/${tx}?cluster=devnet`, payer: async () => ({ network: SOL, scheme: "exact", create: async () => ({ transaction: "c2lnbmVk" }) }) };
+  const exact: DemoMethod = { id: "exact", network: SOL, payTo: PAY_TO, asset: "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU", explorer: (tx) => `https://explorer.solana.com/tx/${tx}?cluster=devnet`, payer: async () => ({ network: SOL, scheme: "exact", create: async () => ({ transaction: "c2lnbmVk" }) }) };
   mountDemo(app, { selfBase: base, price: 1000n, methods: [exact], dailyCap: o.dailyCap ?? 1_000_000n, resultsDir: results, rate: o.rate });
   return { fac, base };
 }

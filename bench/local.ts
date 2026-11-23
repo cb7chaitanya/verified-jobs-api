@@ -130,7 +130,7 @@ const sessionLedger = new Ledger();
 const reader = new RpcSessionReader(chain.rpc);
 const sessionApi = await serve(new x402ResourceServer(new SessionFacilitator({ network, reader, ledger: sessionLedger })).register(network, new SessionServerScheme({ mint })), "session", sessionLedger, network);
 
-const policy = (host: string, net: string) => ({ allowedHosts: [host], networks: [net], payees: { [net]: seller.address }, maxPerCall: 2_000n, dailyCap: 1_000_000_000n });
+const policy = (host: string, net: string) => ({ allowedHosts: [host], networks: [net], payees: { [net]: seller.address }, assets: { [net]: mint }, maxPerCall: 2_000n, dailyCap: 1_000_000_000n });
 const stats = (xs: number[]) => {
   const s = [...xs].sort((a, b) => a - b);
   const q = (p: number) => s[Math.min(s.length - 1, Math.floor(p * s.length))]!;

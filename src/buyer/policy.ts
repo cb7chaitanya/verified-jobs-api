@@ -22,6 +22,12 @@ export interface Policy {
   networks: string[];
   /** Pinned payee per network: a 402 asking to pay anyone else is refused. */
   payees: Record<string, string>;
+  /**
+   * Pinned token per network (mint or contract address). Limits are in that token's atomic units,
+   * so a 402 asking for any other token is refused rather than letting it be paid in something
+   * worth more per unit.
+   */
+  assets: Record<string, string>;
   /** Largest single payment, in atomic units (USDC: 1 = $0.000001). */
   maxPerCall: bigint;
   /** Total per UTC day, in atomic units, across all networks. */
@@ -29,6 +35,15 @@ export interface Policy {
 }
 
 export type Decision = { ok: true; requirement: Requirement } | { ok: false; reason: string };
+
+/** USDC on the networks this repo targets, for policies that don't name their own token. */
+export const USDC: Record<string, string> = {
+  "eip155:5042002": "0x3600000000000000000000000000000000000000", // Arc Testnet
+  "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU", // Solana devnet
+};
+
+/** EVM addresses compare case-insensitively (checksums); everything else exactly. */
+const sameAsset = (a: string, b: string) => (a.startsWith("0x") && b.startsWith("0x") ? a.toLowerCase() === b.toLowerCase() : a === b);
 
 /**
  * Pick the first acceptable option, or explain why none is. `quoted` is the price per network from
@@ -45,7 +60,9 @@ export function choose(accepts: Requirement[], policy: Policy, spentToday: bigin
         reasons.push(`${network}: unreadable amount`);
         continue;
       }
+      const pinnedAsset = policy.assets[network];
       if (r.payTo !== policy.payees[network]) reasons.push(`${network}: asks to pay ${r.payTo}, not the pinned payee`);
+      else if (!pinnedAsset || typeof r.asset !== "string" || !sameAsset(r.asset, pinnedAsset)) reasons.push(`${network}: asks for ${r.asset}, not the pinned asset`);
       else if (amount <= 0n) reasons.push(`${network}: non-positive amount`);
       else if (amount > policy.maxPerCall) reasons.push(`${network}: ${amount} exceeds the per-call limit of ${policy.maxPerCall}`);
       else if (quoted[network] !== undefined && amount > quoted[network]) reasons.push(`${network}: price changed from the published ${quoted[network]} to ${amount}`);
