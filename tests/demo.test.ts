@@ -1,0 +1,111 @@
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import type { AddressInfo } from "node:net";
+import type { Server } from "node:http";
+import { afterEach, describe, expect, it } from "vitest";
+import type { FacilitatorClient } from "@x402/core/server";
+import { x402ResourceServer } from "@x402/express";
+import { ExactSvmScheme } from "@x402/svm/exact/server";
+import { createApp } from "../src/app";
+import type { Verification } from "../src/core/verify";
+import { mountDemo, type DemoMethod } from "../src/demo/demo";
+
+const SOL = "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1" as const;
+const PAY_TO = "9xQeWvG816bUx9EPjHmaT23yvVM2ZWbrrpZb9PusVFin";
+const POSTING = "https://job-boards.greenhouse.io/acme/jobs/42";
+
+class FakeFacilitator implements FacilitatorClient {
+  settles = 0;
+  async getSupported() {
+    return { kinds: [{ x402Version: 2, scheme: "exact", network: SOL, extra: { feePayer: "CKPKJWNdJEqa81x7CkZ14BVPiY6y16Sxs7owznqtWYp5" } }], extensions: [], signers: {} };
+  }
+  async verify() {
+    return { isValid: true, payer: "buyer" };
+  }
+  async settle() {
+    this.settles++;
+    return { success: true, transaction: "5fakeSig", network: SOL, payer: "buyer" };
+  }
+}
+
+const OPEN: Verification = {
+  url: POSTING,
+  status: "OPEN",
+  checkedAt: "2026-11-23T00:00:00.000Z",
+  evidence: { type: "ATS_DETAIL_ACTIVE", board: "GREENHOUSE", boardId: "acme", jobId: "42", endpoint: "stub", httpStatus: 200, ms: 1, detail: "live" },
+  job: { title: "Backend Engineer", company: "Acme", location: "Bengaluru", workplace: "ONSITE", postedAt: null, applyUrl: null, isSoftwareRole: true },
+  india: { eligibility: "ELIGIBLE", tier: "INDIA_CITY", reasons: ["Location lists India (Bengaluru)"] },
+};
+
+let server: Server | undefined;
+afterEach(() => server?.close());
+
+async function start(o: { dailyCap?: bigint; rate?: { max: number; windowMs: number } } = {}) {
+  const fac = new FakeFacilitator();
+  const rs = new x402ResourceServer(fac).register(SOL, new ExactSvmScheme());
+  const app = createApp({ verify: async () => OPEN, payments: { server: rs, options: [{ scheme: "exact", network: SOL, payTo: PAY_TO, price: "$0.001", label: "test" }] }, cacheMs: 0 });
+  server = await new Promise<Server>((r) => {
+    const s = app.listen(0, () => r(s));
+  });
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const results = mkdtempSync(join(tmpdir(), "demo-bench-"));
+  writeFileSync(join(results, "devnet-2026-11-23.json"), JSON.stringify({ calls: 100, exact: { served: 100 } }));
+  writeFileSync(join(results, "devnet-2026-11-23-raw.json"), JSON.stringify({ calls: 100, exact: { served: 60 } }));
+  const exact: DemoMethod = { id: "exact", network: SOL, payTo: PAY_TO, explorer: (tx) => `https://explorer.solana.com/tx/${tx}?cluster=devnet`, payer: async () => ({ network: SOL, scheme: "exact", create: async () => ({ transaction: "c2lnbmVk" }) }) };
+  mountDemo(app, { selfBase: base, price: 1000n, methods: [exact], dailyCap: o.dailyCap ?? 1_000_000n, resultsDir: results, rate: o.rate });
+  return { fac, base };
+}
+
+const run = async (base: string, body: unknown, headers: Record<string, string> = {}) => {
+  const r = await fetch(`${base}/demo/verify`, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
+  const text = await r.text();
+  return { status: r.status, events: r.headers.get("content-type")?.includes("ndjson") ? text.trim().split("\n").map((l) => JSON.parse(l) as Record<string, unknown>) : [], text };
+};
+
+describe("demo page", () => {
+  it("serves the page and its configuration, with the latest benchmark results", async () => {
+    const { base } = await start();
+    const page = await fetch(base + "/");
+    expect(page.headers.get("content-type")).toMatch(/html/);
+    expect(await page.text()).toContain("Testnet demo");
+    const cfg = (await (await fetch(base + "/demo/config")).json()) as Record<string, any>;
+    expect(cfg.methods.map((m: { id: string }) => m.id)).toEqual(["exact"]);
+    expect(cfg.samples.length).toBeGreaterThan(0);
+    expect(cfg.benchmarks.devnet.exact.served).toBe(100);
+    expect(cfg.benchmarks.devnetRaw.exact.served).toBe(60);
+  });
+
+  it("streams the whole x402 exchange: 402, payment, settlement, answer", async () => {
+    const { base, fac } = await start();
+    const { status, events } = await run(base, { url: POSTING, method: "exact" });
+    expect(status).toBe(200);
+    expect(events.map((e) => e.type)).toEqual(["start", "402", "pay", "settled", "result"]);
+    expect(events[1]).toMatchObject({ accepts: [{ scheme: "exact", network: SOL, amount: "1000", payTo: PAY_TO }] });
+    expect(events[3]).toMatchObject({ success: true, transaction: "5fakeSig", explorer: "https://explorer.solana.com/tx/5fakeSig?cluster=devnet" });
+    expect(events[4]).toMatchObject({ ok: true, data: { status: "OPEN" }, paid: { amount: "1000" }, budget: { spentToday: "1000" } });
+    expect(fac.settles).toBe(1);
+  });
+
+  it("stops at the demo's daily cap without paying", async () => {
+    const { base, fac } = await start({ dailyCap: 500n });
+    const { events } = await run(base, { url: POSTING, method: "exact" });
+    expect(events.at(-1)).toMatchObject({ type: "result", ok: false, refused: expect.stringMatching(/daily cap/) });
+    expect(events.some((e) => e.type === "pay")).toBe(false);
+    expect(fac.settles).toBe(0);
+  });
+
+  it("refuses other sites, unknown methods and bad input", async () => {
+    const { base, fac } = await start();
+    expect((await run(base, { url: POSTING, method: "exact" }, { origin: "https://evil.example" })).status).toBe(403);
+    expect((await run(base, { url: POSTING, method: "card" })).status).toBe(400);
+    expect((await run(base, { url: 42, method: "exact" })).status).toBe(400);
+    expect(fac.settles).toBe(0);
+  });
+
+  it("rate-limits paid runs across visitors", async () => {
+    const { base } = await start({ rate: { max: 1, windowMs: 60_000 } });
+    expect((await run(base, { url: POSTING, method: "exact" })).status).toBe(200);
+    expect((await run(base, { url: POSTING, method: "exact" })).status).toBe(429);
+  });
+});

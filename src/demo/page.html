@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Verified Jobs API · Testnet demo</title>
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --ink: #14171c; --muted: #5d6673; --line: #e3e6eb;
+    --accent: #1f6feb; --accent-ink: #ffffff; --accent-soft: #e8f0fe;
+    --ok: #127a3d; --ok-soft: #e4f5ea; --bad: #b42318; --bad-soft: #fdecea; --warn: #9a6700; --warn-soft: #fff4d6;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1115; --panel: #171a21; --ink: #e8eaee; --muted: #9aa3b0; --line: #2a2f39;
+      --accent: #4c8dff; --accent-ink: #0b0d10; --accent-soft: #1b2740;
+      --ok: #4ccb7f; --ok-soft: #14291d; --bad: #ff7b72; --bad-soft: #3a1714; --warn: #e3b341; --warn-soft: #33290f;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 980px; margin: 0 auto; padding: 32px 16px 64px; }
+  header { margin-bottom: 24px; }
+  h1 { font-size: 26px; margin: 0 0 6px; letter-spacing: -0.01em; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  h2 { font-size: 17px; margin: 0 0 14px; }
+  .pill { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--warn-soft); color: var(--warn); }
+  .lede { color: var(--muted); margin: 0; max-width: 70ch; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 20px; margin-bottom: 16px; }
+  label.field { display: block; font-weight: 600; margin-bottom: 6px; }
+  input[type=url] { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); font: inherit; }
+  input[type=url]:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .samples { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 18px; }
+  .chip { border: 1px solid var(--line); background: transparent; color: var(--ink); border-radius: 999px; padding: 4px 10px; font: inherit; font-size: 13px; cursor: pointer; }
+  .chip:hover { border-color: var(--accent); }
+  .chip small { color: var(--muted); }
+  .methods { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin-bottom: 18px; }
+  .method { position: relative; border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; cursor: pointer; }
+  .method input { position: absolute; opacity: 0; }
+  .method:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+  .method:has(input:focus-visible) { outline: 2px solid var(--accent); }
+  .method:has(input:disabled) { opacity: .45; cursor: not-allowed; }
+  .method b { display: block; }
+  .method span { color: var(--muted); font-size: 13px; }
+  .actions { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  button.primary { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 8px; padding: 10px 18px; font: inherit; font-weight: 600; cursor: pointer; }
+  button.primary:disabled { opacity: .5; cursor: progress; }
+  button.secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); border-radius: 8px; padding: 6px 12px; font: inherit; font-size: 14px; cursor: pointer; }
+  .muted { color: var(--muted); font-size: 13px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } }
+  ol.steps { list-style: none; margin: 0; padding: 0; }
+  ol.steps li { display: grid; grid-template-columns: 22px 1fr auto; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); }
+  ol.steps li:first-child { border-top: 0; padding-top: 0; }
+  .dot { width: 14px; height: 14px; border-radius: 50%; margin-top: 4px; background: var(--line); }
+  .dot.ok { background: var(--ok); } .dot.bad { background: var(--bad); } .dot.wait { background: var(--accent); animation: pulse 1s infinite; } .dot.info { background: var(--warn); }
+  @keyframes pulse { 50% { opacity: .35; } }
+  .step-title { font-weight: 600; }
+  .step-body { color: var(--muted); font-size: 13px; word-break: break-word; }
+  .ms { font-family: var(--mono); font-size: 12px; color: var(--muted); white-space: nowrap; }
+  code, .mono { font-family: var(--mono); font-size: 12.5px; }
+  details { margin-top: 4px; }
+  details pre { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 8px; overflow-x: auto; font-size: 12px; max-height: 220px; }
+  a { color: var(--accent); }
+  .badge { display: inline-block; font-size: 12px; font-weight: 700; letter-spacing: .02em; padding: 2px 8px; border-radius: 6px; }
+  .badge.ok { background: var(--ok-soft); color: var(--ok); } .badge.bad { background: var(--bad-soft); color: var(--bad); } .badge.warn { background: var(--warn-soft); color: var(--warn); }
+  .job-title { font-size: 18px; font-weight: 650; margin: 8px 0 2px; }
+  dl.facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 14px 0 0; font-size: 14px; }
+  dl.facts dt { color: var(--muted); }
+  dl.facts dd { margin: 0; word-break: break-word; }
+  .empty { color: var(--muted); font-size: 14px; }
+  .bar { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; margin: 6px 0; }
+  .bar > i { display: block; height: 100%; background: var(--accent); }
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 10px; border-top: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); border-top: 0; }
+  td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tbody th { text-transform: none; letter-spacing: 0; font-size: 14px; font-weight: 500; }
+  @media (max-width: 560px) { td.num { white-space: normal; } }
+  .callout { border-left: 3px solid var(--ok); background: var(--ok-soft); padding: 10px 14px; border-radius: 6px; font-size: 14px; margin-top: 14px; }
+  footer { color: var(--muted); font-size: 13px; margin-top: 24px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Verified Jobs API <span class="pill">Testnet demo</span></h1>
+    <p class="lede">Paste a job posting. A buyer agent pays this API $0.001 in USDC over x402 and gets back whether the job is still open, checked against the employer's own job board, and whether someone in India can apply. Pick how it pays and watch each step.</p>
+  </header>
+
+  <section class="panel" aria-labelledby="try">
+    <h2 id="try">Check a posting</h2>
+    <form id="form">
+      <label class="field" for="url">Job posting URL</label>
+      <input id="url" type="url" required placeholder="https://jobs.lever.co/company/…" autocomplete="off" spellcheck="false">
+      <div class="samples" id="samples" aria-label="Sample postings"></div>
+
+      <div class="field" style="font-weight:600;margin-bottom:6px">How the agent pays</div>
+      <div class="methods" role="radiogroup" aria-label="Payment method">
+        <label class="method"><input type="radio" name="method" value="gateway"><b>Circle Gateway</b><span>Arc Testnet · signs an authorization against a deposit; Circle settles in batches. No gas per call.</span></label>
+        <label class="method"><input type="radio" name="method" value="exact"><b>x402 exact</b><span>Solana devnet · one USDC transfer per call, fee paid by the facilitator.</span></label>
+        <label class="method"><input type="radio" name="method" value="session"><b>pay_session</b><span>Solana devnet · deposit once, sign a running total per call, seller redeems in one transaction.</span></label>
+      </div>
+
+      <div class="actions">
+        <button class="primary" id="go" type="submit">Pay $0.001 and verify</button>
+        <span class="muted" id="budget"></span>
+      </div>
+    </form>
+  </section>
+
+  <div class="grid2">
+    <section class="panel" aria-labelledby="flow-h" aria-live="polite">
+      <h2 id="flow-h">What happened</h2>
+      <ol class="steps" id="steps"><li class="empty" style="display:block">Run a check to see the payment flow.</li></ol>
+    </section>
+    <section class="panel" aria-labelledby="result-h" aria-live="polite">
+      <h2 id="result-h">Answer</h2>
+      <div id="result"><p class="empty">No result yet.</p></div>
+    </section>
+  </div>
+
+  <section class="panel" id="session-panel" hidden aria-labelledby="session-h">
+    <h2 id="session-h">Prepaid session</h2>
+    <div id="session-body"></div>
+  </section>
+
+  <section class="panel" aria-labelledby="bench-h">
+    <h2 id="bench-h">Measured on testnet</h2>
+    <p class="muted" style="margin-top:-6px">From the repo's benchmark runs: paid calls with job checks stubbed, so only the payment is measured.</p>
+    <div class="table-wrap"><table id="bench"></table></div>
+    <div id="bench-note"></div>
+  </section>
+
+  <footer>Testnet only: devnet USDC and Arc Testnet USDC, paid from this server's demo wallets. Not audited. The API is <code>GET /v1/verify?url=…</code>; see <a href="/v1">/v1</a> for prices and payment options.</footer>
+</main>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const el = (tag, props = {}, ...kids) => {
+    const n = document.createElement(tag);
+    for (const [k, v] of Object.entries(props)) {
+      if (k === "class") n.className = v; else if (k === "text") n.textContent = v; else n.setAttribute(k, v);
+    }
+    for (const k of kids) if (k != null) n.append(k);
+    return n;
+  };
+  const usd = (atomic) => "$" + (Number(atomic) / 1e6).toFixed(Number(atomic) % 1000 ? 6 : 3);
+  const short = (s, n = 10) => (s && s.length > 2 * n + 1 ? s.slice(0, n) + "…" + s.slice(-n) : s || "");
+  const safeLink = (href, text) => {
+    try {
+      const u = new URL(href);
+      if (u.protocol !== "https:") return document.createTextNode(text);
+      return el("a", { href: u.href, target: "_blank", rel: "noopener noreferrer", text });
+    } catch { return document.createTextNode(text); }
+  };
+  const NET = { "eip155:5042002": "Arc Testnet", "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1": "Solana devnet" };
+  const net = (n) => NET[n] || n;
+
+  let config = null;
+  let steps = {};
+
+  async function load() {
+    config = await (await fetch("/demo/config")).json();
+    const enabled = new Set(config.methods.map((m) => m.id));
+    let first = true;
+    for (const r of document.querySelectorAll("input[name=method]")) {
+      r.disabled = !enabled.has(r.value);
+      if (r.disabled) r.closest("label").title = "Not enabled on this server";
+      else if (first) { r.checked = true; first = false; }
+    }
+    $("go").textContent = `Pay ${usd(config.price)} and verify`;
+    const s = $("samples");
+    for (const x of config.samples) {
+      s.append(el("button", { type: "button", class: "chip" }, x.label + " ", el("small", { text: x.board })));
+      s.lastChild.addEventListener("click", () => { $("url").value = x.url; $("url").focus(); });
+    }
+    showBudget(config.budget);
+    showSession(config.session);
+    showBench(config.benchmarks);
+  }
+
+  function showBudget(b) {
+    if (b) $("budget").textContent = `Demo budget today: ${usd(b.spentToday)} of ${usd(b.dailyCap)}`;
+  }
+
+  // --- steps ---
+  function resetSteps() { $("steps").replaceChildren(); steps = {}; }
+  function step(key, state, title, body, ms) {
+    let li = steps[key];
+    if (!li) { li = el("li"); steps[key] = li; $("steps").append(li); }
+    const b = el("div", {}, el("div", { class: "step-title", text: title }));
+    if (body) b.append(el("div", { class: "step-body" }, ...[].concat(body)));
+    li.replaceChildren(el("span", { class: "dot " + state, "aria-hidden": "true" }), b, el("span", { class: "ms", text: ms != null ? ms + " ms" : "" }));
+  }
+  const raw = (obj, label = "Raw") => {
+    const d = el("details");
+    d.append(el("summary", { text: label }), el("pre", { text: JSON.stringify(obj, (k, v) => (typeof v === "string" && v.length > 120 ? short(v, 40) : v), 2) }));
+    return d;
+  };
+
+  function onEvent(e) {
+    switch (e.type) {
+      case "start":
+        step("ask", "wait", "Agent asks for the result", "GET /v1/verify without paying");
+        break;
+      case "session-opening":
+        step("session", "wait", "Opening a prepaid session", `Depositing ${usd(e.deposit)} into the pay_session program (first use only)`);
+        break;
+      case "session-opened":
+        step("session", "ok", "Session opened on-chain", [`Deposit ${usd(e.deposit)} · `, safeLink(e.explorer, "open transaction ↗")], e.ms);
+        break;
+      case "402": {
+        const offers = e.accepts.map((a) => `${a.scheme} on ${net(a.network)} for ${usd(a.amount)}`).join("; ");
+        step("ask", "ok", "Server answers 402 Payment Required", "Offers: " + offers, e.ms);
+        step("pay", "wait", "Agent checks its spending policy", "Pinned payee, per-call limit, daily cap, published price");
+        break;
+      }
+      case "pay": {
+        const body = [`Pays ${usd(e.amount)} with ${e.scheme} on ${net(e.network)} to ${short(e.payTo, 6)}`];
+        const p = e.payload || {};
+        if (e.scheme === "session") body.push(el("div", { text: `Signed running total ${usd(p.cumulative)} for session ${short(p.session, 6)} — no transaction` }));
+        else if (p.transaction) body.push(el("div", { text: "A Solana USDC transfer, signed by the buyer; the facilitator adds the fee and submits it" }));
+        else if (p.authorization) body.push(el("div", { text: "An EIP-3009 authorization against the buyer's Gateway deposit — no transaction" }));
+        body.push(raw(e.payload, "Payment payload"));
+        step("pay", "ok", "Agent signs a payment", body);
+        step("settle", "wait", "Server verifies, runs the check, settles", null);
+        break;
+      }
+      case "settled": {
+        const body = [];
+        if (e.success) {
+          if (e.explorer) body.push(safeLink(e.explorer, "Settlement transaction ↗"));
+          else if (e.extra && e.extra.cumulative) body.push(`Receipt accepted: running total ${usd(e.extra.cumulative)}. Paid on-chain when the seller redeems.`);
+          else body.push("Accepted by Circle Gateway; settled on Arc later in a batch." + (e.transaction ? ` Reference ${short(e.transaction, 6)}` : ""));
+        } else body.push(`HTTP ${e.status}: not settled, so the result is withheld`);
+        step("settle", e.success ? "ok" : "bad", e.success ? "Paid and served" : "Not served", body, e.ms);
+        break;
+      }
+      case "response":
+        step("ask", e.status === 200 ? "ok" : "bad", `HTTP ${e.status}`, null, e.ms);
+        break;
+      case "result":
+        showResult(e);
+        showBudget(e.budget);
+        if (e.session) showSession(e.session);
+        if (e.refused) step("pay", "bad", "Agent refused to pay", e.refused);
+        step("done", e.ok ? "ok" : "bad", e.ok ? "Done" : "Stopped", e.ok ? `Total ${e.totalMs} ms, including the employer's job board` : (e.error || e.refused || ""), null);
+        break;
+      case "error":
+        step("err", "bad", "Demo error", e.message);
+        break;
+    }
+  }
+
+  function showResult(e) {
+    const box = $("result");
+    const d = e.data;
+    if (!e.ok || !d || !d.status) {
+      const msg = (d && (d.message || d.error)) || e.refused || e.error || "No result";
+      box.replaceChildren(el("span", { class: "badge bad", text: e.status === 400 ? "Not a supported posting" : "No result" }), el("p", { class: "empty", text: msg + (e.status === 400 ? " — checked before any payment, so nothing was charged." : "") }));
+      return;
+    }
+    const open = d.status === "OPEN";
+    const kids = [el("span", { class: "badge " + (open ? "ok" : d.status === "CLOSED" ? "bad" : "warn"), text: d.status })];
+    if (d.cached) kids.push(document.createTextNode(" "), el("span", { class: "badge warn", text: "cached" }));
+    if (d.job) kids.push(el("div", { class: "job-title", text: d.job.title }), el("div", { class: "muted", text: [d.job.company, d.job.location, d.job.workplace && d.job.workplace.toLowerCase()].filter(Boolean).join(" · ") }));
+    const facts = el("dl", { class: "facts" });
+    const fact = (k, v) => { if (v != null && v !== "") facts.append(el("dt", { text: k }), el("dd", {}, v)); };
+    if (d.india) {
+      const ok = d.india.eligibility === "ELIGIBLE";
+      fact("From India?", el("span", {}, el("span", { class: "badge " + (ok ? "ok" : d.india.eligibility === "INELIGIBLE" ? "bad" : "warn"), text: d.india.eligibility.replace(/_/g, " ").toLowerCase() }), " " + (d.india.reasons || []).join("; ")));
+    }
+    if (d.evidence) {
+      fact("Evidence", `${d.evidence.board} official API answered ${d.evidence.httpStatus ?? "—"}${d.evidence.ms != null ? ` in ${d.evidence.ms} ms` : ""}`);
+      fact("Detail", d.evidence.detail);
+    }
+    fact("Checked", new Date(d.checkedAt).toLocaleString());
+    if (e.paid) fact("Paid", `${usd(e.paid.amount)} on ${net(e.paid.network)}`);
+    if (d.job && d.job.applyUrl) fact("Apply", safeLink(d.job.applyUrl, "Employer's page ↗"));
+    kids.push(facts);
+    box.replaceChildren(...kids);
+  }
+
+  function showSession(s) {
+    const panel = $("session-panel");
+    if (!config || !config.methods.some((m) => m.id === "session")) return;
+    panel.hidden = false;
+    const body = $("session-body");
+    if (!s) { body.replaceChildren(el("p", { class: "empty", text: "No session yet. The first pay_session check opens one." })); return; }
+    const pct = Math.min(100, (Number(s.spent) / Number(s.deposit)) * 100);
+    const kids = [
+      el("div", { class: "muted", text: `Session ${short(s.session, 6)}: ${usd(s.spent)} of ${usd(s.deposit)} signed over to the seller` }),
+      el("div", { class: "bar", role: "progressbar", "aria-valuenow": String(Math.round(pct)), "aria-valuemin": "0", "aria-valuemax": "100" }, el("i", { style: `width:${pct}%` })),
+    ];
+    if (config.canRedeem) {
+      const btn = el("button", { class: "secondary", type: "button", text: "Seller: redeem now" });
+      const out = el("div", { class: "step-body" });
+      btn.addEventListener("click", async () => {
+        btn.disabled = true; out.textContent = "Redeeming…";
+        try {
+          const r = await (await fetch("/demo/redeem", { method: "POST" })).json();
+          out.replaceChildren();
+          if (!r.redeemed || !r.redeemed.length) out.textContent = r.message || "Nothing due yet.";
+          for (const x of r.redeemed || []) out.append(el("div", {}, x.tx ? safeLink(x.explorer, `Redeemed ${usd(x.amount)} in one transaction ↗`) : document.createTextNode(x.error || "Nothing owed")));
+        } catch { out.textContent = "Redeem failed."; }
+        btn.disabled = false;
+      });
+      kids.push(el("div", { class: "actions" }, btn, el("span", { class: "muted", text: "Every receipt since the last redeem is paid out in a single transaction." })), out);
+    }
+    body.replaceChildren(...kids);
+  }
+
+  function showBench(b) {
+    const t = $("bench");
+    const dev = b && b.devnet, gw = b && b.gateway, rawRun = b && b.devnetRaw;
+    if (!dev && !gw) { t.replaceChildren(el("tr", {}, el("td", { class: "empty", text: "No benchmark results on this server." }))); return; }
+    const lat = (x) => (x ? `${x.p50.toLocaleString()} / ${x.p95.toLocaleString()} ms` : "—");
+    const rows = [
+      ["", "Circle Gateway", "x402 exact", "pay_session"],
+      ["Network", "Arc Testnet", "Solana devnet", "Solana devnet"],
+      ["Calls served", gw ? `${gw.served} / ${gw.calls}` : "—", dev ? `${dev.exact.served} / ${dev.calls}` : "—", dev ? `${dev.session.served} / ${dev.calls}` : "—"],
+      ["On-chain transactions", "0 per call (batched later)", dev ? String(dev.exact.onchainTransactions) : "—", dev ? `${dev.session.onchainTransactions} (open + redeem)` : "—"],
+      ["Network fees", "none for the buyer", dev ? `${Number(dev.exact.feesLamports).toLocaleString()} lamports` : "—", dev ? `${Number(dev.session.feesLamports).toLocaleString()} lamports` : "—"],
+      ["Payment latency, p50 / p95", gw ? lat(gw.latencyMs) : "—", dev ? lat(dev.exact.latencyMs) : "—", dev ? lat(dev.session.latencyMs) : "—"],
+    ];
+    const head = el("tr", {}, ...rows[0].map((h) => el("th", { scope: "col", text: h })));
+    t.replaceChildren(el("thead", {}, head), el("tbody", {}, ...rows.slice(1).map((r) => el("tr", {}, el("th", { scope: "row", text: r[0] }), ...r.slice(1).map((c) => el("td", { class: "num", text: c }))))));
+    const note = $("bench-note");
+    note.replaceChildren();
+    if (rawRun && dev && rawRun.exact && dev.exact) {
+      note.append(el("div", { class: "callout", text: `Found and fixed: through the public facilitator, x402 exact served only ${rawRun.exact.served} of ${rawRun.calls} calls although all ${rawRun.calls} payments landed — "settlement pending" was treated as a failure. The API now confirms those transactions on-chain: ${dev.exact.served} of ${dev.calls} served, ${dev.exact.recoveredOnChain ?? 0} recovered, none charged without a result.` }));
+    }
+  }
+
+  $("form").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const url = $("url").value.trim();
+    const method = (document.querySelector("input[name=method]:checked") || {}).value;
+    if (!url || !method) return;
+    const go = $("go");
+    go.disabled = true;
+    resetSteps();
+    $("result").replaceChildren(el("p", { class: "empty", text: "Waiting for the agent…" }));
+    try {
+      const res = await fetch("/demo/verify", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url, method }) });
+      if (!res.ok || !res.body) {
+        const j = await res.json().catch(() => ({}));
+        step("err", "bad", "Couldn't start", j.message || `HTTP ${res.status}`);
+        $("result").replaceChildren(el("p", { class: "empty", text: "No result." }));
+        return;
+      }
+      const reader = res.body.getReader();
+      const dec = new TextDecoder();
+      let buf = "";
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let i;
+        while ((i = buf.indexOf("\n")) >= 0) {
+          const line = buf.slice(0, i).trim();
+          buf = buf.slice(i + 1);
+          if (line) { try { onEvent(JSON.parse(line)); } catch {} }
+        }
+      }
+    } catch (e) {
+      step("err", "bad", "Network error", String(e && e.message || e));
+    } finally {
+      go.disabled = false;
+    }
+  });
+
+  load().catch(() => { $("budget").textContent = "Couldn't load the demo configuration."; });
+})();
+</script>
+</body>
+</html>
