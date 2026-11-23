@@ -44,6 +44,9 @@ export const USDC: Record<string, string> = {
   "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1": "4zMMC9srt5Ri5X14GAgXhaHii3GnPAEERYPJgZJDncDU", // Solana devnet
 };
 
+/** Published prices are keyed by scheme and network ("session@solana:…"), or by network alone. */
+export const quoteKey = (network: string, scheme?: string) => (scheme ? `${scheme}@${network}` : network);
+
 /** EVM addresses compare case-insensitively (checksums); everything else exactly. */
 const sameAsset = (a: string, b: string) => (a.startsWith("0x") && b.startsWith("0x") ? a.toLowerCase() === b.toLowerCase() : a === b);
 
@@ -63,11 +66,12 @@ export function choose(accepts: Requirement[], policy: Policy, spentToday: bigin
         continue;
       }
       const pinnedAsset = policy.assets[network];
+      const quote = quoted[quoteKey(network, r.scheme)] ?? quoted[network];
       if (r.payTo !== policy.payees[network]) reasons.push(`${network}: asks to pay ${r.payTo}, not the pinned payee`);
       else if (!pinnedAsset || typeof r.asset !== "string" || !sameAsset(r.asset, pinnedAsset)) reasons.push(`${network}: asks for ${r.asset}, not the pinned asset`);
       else if (amount <= 0n) reasons.push(`${network}: non-positive amount`);
       else if (amount > policy.maxPerCall) reasons.push(`${network}: ${amount} exceeds the per-call limit of ${policy.maxPerCall}`);
-      else if (quoted[network] !== undefined && amount > quoted[network]) reasons.push(`${network}: price changed from the published ${quoted[network]} to ${amount}`);
+      else if (quote !== undefined && amount > quote) reasons.push(`${network}: price changed from the published ${quote} to ${amount}`);
       else if (spentToday + amount > policy.dailyCap) reasons.push(`${network}: would exceed the daily cap (${spentToday} + ${amount} > ${policy.dailyCap})`);
       else return { ok: true, requirement: r };
     }

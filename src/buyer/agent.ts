@@ -1,4 +1,4 @@
-import { choose, SpendLog, type Policy, type Requirement } from "./policy";
+import { choose, quoteKey, SpendLog, type Policy, type Requirement } from "./policy";
 import type { SessionPayer } from "../session/scheme";
 import { SCHEME as SESSION_SCHEME } from "../session/protocol";
 
@@ -65,10 +65,11 @@ export class BuyerAgent {
   /** Read the service's published prices once; later 402s may not ask for more. */
   async discover(serviceBase: string) {
     this.assertHost(serviceBase);
-    const m = (await (await this.fetchImpl(`${serviceBase.replace(/\/$/, "")}/v1`, { redirect: "manual" })).json()) as { payment?: { network: string; price: string }[] };
+    const m = (await (await this.fetchImpl(`${serviceBase.replace(/\/$/, "")}/v1`, { redirect: "manual" })).json()) as { payment?: { network: string; scheme?: string; price: string }[] };
     for (const p of m.payment ?? []) {
       const usd = Number(String(p.price).replace(/^\$/, ""));
-      if (Number.isFinite(usd) && usd > 0) this.quoted[p.network] = BigInt(Math.round(usd * 1_000_000)); // USDC, 6 decimals
+      // Keyed by scheme too: one network can carry several schemes (exact and session on Solana).
+      if (Number.isFinite(usd) && usd > 0) this.quoted[quoteKey(p.network, p.scheme)] = BigInt(Math.round(usd * 1_000_000)); // USDC, 6 decimals
     }
     return m;
   }

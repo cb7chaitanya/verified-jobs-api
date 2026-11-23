@@ -64,6 +64,11 @@ describe("spending policy", () => {
     expect(choose([req({ amount: "2000" })], policy, 0n, { [ARC]: 1000n })).toMatchObject({ ok: false, reason: expect.stringMatching(/price changed/) });
     expect(choose([req({ network: "eip155:1", payTo: SELLER_ARC })], policy, 0n)).toMatchObject({ ok: false, reason: expect.stringMatching(/not allowed/) });
     expect(choose([req({ amount: "-5" })], policy, 0n)).toMatchObject({ ok: false });
+    // Quotes are per scheme on a network: a cheap exact quote doesn't cap the session price, and vice versa.
+    const q = { [`exact@${SOL}`]: 1000n, [`session@${SOL}`]: 2000n };
+    const sol = { ...policy, networks: [SOL] };
+    expect(choose([req({ scheme: "session", network: SOL, payTo: SELLER_SOL, amount: "2000" })], sol, 0n, q)).toMatchObject({ ok: true });
+    expect(choose([req({ network: SOL, payTo: SELLER_SOL, amount: "2000" })], sol, 0n, q)).toMatchObject({ ok: false, reason: expect.stringMatching(/price changed/) });
     // The token is pinned too: limits are in the pinned token's units.
     expect(choose([req({ asset: "SomeOtherMint" })], policy, 0n)).toMatchObject({ ok: false, reason: expect.stringMatching(/not the pinned asset/) });
     expect(choose([req({ asset: undefined as unknown as string })], policy, 0n)).toMatchObject({ ok: false, reason: expect.stringMatching(/not the pinned asset/) });
