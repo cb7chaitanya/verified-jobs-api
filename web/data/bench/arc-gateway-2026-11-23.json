@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T17:36:03.209Z",
+  "network": "Arc Testnet via Circle Gateway (testnet)",
+  "calls": 50,
+  "served": 50,
+  "latencyMs": {
+    "p50": 607,
+    "p95": 734
+  },
+  "buyerGatewayAvailableBefore": "949000",
+  "buyerGatewayAvailableAfter": "899000",
+  "note": "Per-call on-chain transactions: 0 (Gateway settles batches later). Buyer pays no gas per call."
+}

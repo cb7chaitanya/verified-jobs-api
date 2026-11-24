@@ -1,0 +1,52 @@
+{
+  "at": "2026-11-23T17:46:11.838Z",
+  "cluster": "Solana devnet",
+  "program": "E5fA3t5xQkhjSiwrE5EzJ4wgr9fWSbTZzXsVxgKjGy3T",
+  "calls": 100,
+  "pricePerCall": "0.001 USDC",
+  "paceMs": 1000,
+  "note": "Job checks are stubbed, so latency is payment overhead plus local HTTP to a local API, and devnet RPC/confirmation for exact. exact fees were paid by the public x402.org facilitator; session fees by the buyer (open) and the seller (redeem).",
+  "exact": {
+    "facilitator": "https://x402.org/facilitator",
+    "served": 100,
+    "latencyMs": {
+      "p50": 1707,
+      "p95": 3265,
+      "mean": 2020
+    },
+    "onchainTransactions": 100,
+    "feesLamports": "1000100",
+    "sellerReceived": "100000",
+    "expected": "100000",
+    "chargedNotServed": 0,
+    "confirmationFallback": "on",
+    "recoveredOnChain": 51,
+    "facilitatorVerify": {
+      "ok": 100
+    },
+    "facilitatorSettle": {
+      "ok": 49,
+      "settlement_pending": 51
+    },
+    "sampleTx": "https://explorer.solana.com/tx/1srnxtUFkVCAwM3SrhNNmbqRY3CazvJmPHQe6anUhacmnH6XtZhoxbxm51fkfvBWQ9SXVzuLRA2aRxxwRuPQb4N?cluster=devnet"
+  },
+  "session": {
+    "served": 100,
+    "latencyMs": {
+      "p50": 8,
+      "p95": 123,
+      "mean": 45
+    },
+    "openMs": 1347,
+    "redeemMs": 1057,
+    "onchainTransactions": 2,
+    "feesLamports": "15000",
+    "sellerReceived": "100000",
+    "expected": "100000",
+    "openTx": "https://explorer.solana.com/tx/5MSg2QnL1ZywAMgeydmFEofUxxpcyRkaw1Dnnie4eDDxCt44y9zUirQWjZL1jtWRuArB4Yz8VQpRZ5jAuEpknmeT?cluster=devnet",
+    "redeemTx": "https://explorer.solana.com/tx/5UuHsAa5AUKrUhLS4s1i2sjjNAjcwTaPUtqWGaWphWVFE1GJLVX323hsnfXcQG7D7nMx8ha8Ue874UUdL5Z5inj9?cluster=devnet",
+    "closeTx": "https://explorer.solana.com/tx/53hXfHRaaRtykdeMncJKkyAdK19spZeWVB5YmBxHCwYPhPNjYH2Dj3fitvEBztHdXaQyfTNdFinRNGipWtF646jG?cluster=devnet",
+    "note": "Opening pays rent for the session and vault accounts; the close returned it with the unused deposit."
+  },
+  "balancesMatch": true
+}
