@@ -17,7 +17,7 @@ Circle Nanopayments covers EVM chains but [not Solana](https://developers.circle
 ## What's here
 
 - **The API** (`src/app.ts`, `src/core/`). Job verification against Greenhouse, Lever, Ashby and Workable, with all three payment options on one route.
-- **`pay_session`** (`solana/programs/pay_session`). An Anchor program for prepaid payment sessions, with 13 LiteSVM tests including attack cases.
+- **`pay_session`** (`solana/programs/pay_session`). An Anchor program for prepaid payment sessions, with 38 LiteSVM tests including attack cases.
 - **The session payment scheme** (`src/session/`). Seller-side checking with a durable ledger, buyer-side signing, and a batch redeemer.
 - **A buyer agent** (`src/buyer/`). Pays only within its owner's spending rules and treats everything a server says as data.
 - **Identity and reputation** (`src/reputation.ts`). An ERC-8004 registration file, and reviews accepted only with proof of a real payment, signed by the payer.
@@ -155,7 +155,7 @@ Program `E5fA3t5xQkhjSiwrE5EzJ4wgr9fWSbTZzXsVxgKjGy3T`, built with Anchor 0.31.1
 | Payouts go only to the seller's own token account | `pays_out_only_to_a_token_account_the_seller_owns` |
 | Hostile accounts are refused: a substituted token program, a spoofed instructions sysvar, another session's vault, one signature for two redeems | `refuses_a_substituted_token_program`, `refuses_a_spoofed_instructions_sysvar`, `refuses_another_sessions_vault`, `one_signature_instruction_cannot_authorise_two_redeems` |
 
-36 LiteSVM tests in all, including the ed25519 edge cases (wrong amount, two signatures, an instruction in between, a truncated message, mixed indexes), zero amounts, wrong signers and accounts, and a compute-unit summary (open 33k, top-up 16k, redeem 17k, close 21k).
+38 LiteSVM tests in all, including the ed25519 edge cases (wrong amount, two signatures, an instruction in between, a truncated message, mixed indexes), zero amounts, wrong signers and accounts, and a compute-unit summary (open 33k, top-up 16k, redeem 17k, close 21k).
 
 **Off-chain, the seller's facilitator** (`src/session/facilitator.ts`) checks each receipt before serving:
 - it's signed by the session's agent key;
@@ -212,8 +212,8 @@ Requires Node 22.18+. For the Solana parts you also need Anchor 0.31.1 and Solan
 
 ```bash
 pnpm install
-pnpm test                 # 53 TypeScript tests
-pnpm solana:test          # builds the program and runs its 13 LiteSVM tests
+pnpm test                 # 76 TypeScript tests
+pnpm solana:test          # builds the program and runs its 38 LiteSVM tests
 pnpm bench:local          # end-to-end benchmark on a local validator
 BUYER_KEYPAIR=… SELLER_KEYPAIR=… pnpm bench:devnet   # the same comparison on Solana devnet
 pnpm bench:gateway        # Circle Gateway on Arc Testnet (needs EVM_PRIVATE_KEY; --deposit <USDC> first)
@@ -236,6 +236,29 @@ pnpm start                # GET http://localhost:3000/v1
 
 The agent pays from testnet keys on the server (`DEMO_EVM_PRIVATE_KEY`, `DEMO_SOLANA_KEYPAIR`; see `.env.example`), so visitors need no wallet. Because that spends the server's funds, the demo has a daily cap (default 0.5 USDC), a global rate limit, runs one call at a time and answers same-origin requests only. Job board data is rendered as text, never as HTML. It is off unless `DEMO=1`, and must never be given mainnet keys.
 
+## Web app (`web/`)
+
+A Next.js site for Vercel: a landing page, the **playground** (the demo above, redesigned, streaming each step of the exchange from the API), **docs** for the API, **benchmark** charts and the **security** review. It's a static site; the only thing it calls is the API's `/demo/*` routes, from the visitor's browser.
+
+```bash
+cd web && pnpm install
+NEXT_PUBLIC_API_URL=http://localhost:3000 pnpm dev   # the API must allow this origin: DEMO_ALLOWED_ORIGINS=http://localhost:3000
+pnpm sync-data                                     # after a new benchmark: copy bench/results into web/data
+```
+
+Without `NEXT_PUBLIC_API_URL`, or when the API can't be reached, the playground replays real runs recorded from the devnet and Arc Testnet demo (`web/data/recordings.json`), explorer links included, and says so.
+
+**Hosting.** The site on Vercel (project root `web`, env `NEXT_PUBLIC_API_URL`), the API on Railway (`railway.json`). The API keeps its ledger in SQLite, so it runs as one replica with a volume at `/data`:
+
+| API variable (Railway) | Value |
+|---|---|
+| `LEDGER_PATH`, `DEMO_DIR`, `DEMO_SPEND_DB` | `/data/ledger.db`, `/data`, `/data/demo-spend.db` |
+| `PUBLIC_URL` | the API's public URL |
+| `DEMO_ALLOWED_ORIGINS` | the Vercel URL, e.g. `https://verified-jobs.vercel.app` |
+| `DEMO_SOLANA_KEYPAIR`, `DEMO_SELLER_KEYPAIR` | the keypair JSON arrays themselves (testnet only) |
+
+The public API sends `Access-Control-Allow-Origin: *` on `/v1`, so x402 clients can run in a browser. `/demo/*` gets CORS only for `DEMO_ALLOWED_ORIGINS`, and its POSTs still require an allowed `Origin`.
+
 ## Layout
 
 ```
@@ -248,6 +271,7 @@ src/reputation.ts       ERC-8004 registration file, payment-backed reviews
 src/ledger.ts           durable seller state (SQLite)
 src/exact-confirm.ts    confirms x402 exact settlements the facilitator reported as pending
 src/demo/               testnet demo page (DEMO=1): the page and the routes that drive the buyer agent
+web/                    the Next.js site (landing, playground, docs, benchmarks, security) for Vercel
 src/cli/                session, redeem and buyer commands
 solana/                 the pay_session Anchor program, its IDL and LiteSVM tests
 bench/                  localnet, devnet and Arc Gateway benchmarks, results
