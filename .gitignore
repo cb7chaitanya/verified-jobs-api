@@ -5,7 +5,7 @@ node_modules/
 *.log
 coverage/
 # Runtime state (ledger, spend log, session files and agent keys)
-data/
+/data/
 .bench/
 policy.json
 # Solana build output, including the program's deploy keypair
@@ -18,3 +18,8 @@ solana/.anchor/
 *keypair*.json
 *-signer-*.json
 agent-*.json
+# Next.js web app (web/)
+.next/
+.vercel/
+next-env.d.ts
+*.tsbuildinfo

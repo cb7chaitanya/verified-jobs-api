@@ -5,7 +5,7 @@
   "description": "A pay-per-call API that tells AI agents whether a job posting is really open and whether someone in India can apply. Paid in USDC via Circle Nanopayments (Arc) or x402 on Solana.",
   "type": "module",
   "engines": {
-    "node": ">=22.13"
+    "node": ">=22.18"
   },
   "scripts": {
     "dev": "tsx watch src/server.ts",
