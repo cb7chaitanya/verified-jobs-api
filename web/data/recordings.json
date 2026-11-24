@@ -1,0 +1,241 @@
+{
+  "session": {
+    "url": "https://jobs.ashbyhq.com/notion/79c18580-c927-456c-9d5f-72efbc6c43cb",
+    "recordedAt": "2026-11-23T23:17:51.868Z",
+    "events": [
+      { "type": "start", "method": "session", "url": "https://jobs.ashbyhq.com/notion/79c18580-c927-456c-9d5f-72efbc6c43cb", "at": 1795475870420 },
+      { "type": "session-opening", "deposit": "50000", "at": 1795475870420 },
+      {
+        "type": "session-opened",
+        "session": "Hbk3L8SCHTJSRYRaW1bi71SEy2cPbrd5JRCUjVCoefMZ",
+        "tx": "2kxdzmriN8r9f85xQ1Ww1DyMSby6jkpGCu31VbbtaESymLLro513XzBDB6Re1CKB9nTUPY6zQ5BJgazeFiud68dQ",
+        "explorer": "https://explorer.solana.com/tx/2kxdzmriN8r9f85xQ1Ww1DyMSby6jkpGCu31VbbtaESymLLro513XzBDB6Re1CKB9nTUPY6zQ5BJgazeFiud68dQ?cluster=devnet",
+        "ms": 1235,
+        "deposit": "50000",
+        "at": 1795475871656
+      },
+      {
+        "type": "402",
+        "ms": 4,
+        "accepts": [
+          { "scheme": "exact", "network": "eip155:5042002", "amount": "1000", "payTo": "0x77090d091Bb68348fbe7FcF4Dc0402D71fE0279E" },
+          { "scheme": "exact", "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1", "amount": "1000", "payTo": "EecxWpaA3DvMmT8TqyXAtGj93wzpfhWckyBkrJmEUeVJ" },
+          { "scheme": "session", "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1", "amount": "1000", "payTo": "EecxWpaA3DvMmT8TqyXAtGj93wzpfhWckyBkrJmEUeVJ" }
+        ],
+        "at": 1795475871664
+      },
+      {
+        "type": "pay",
+        "scheme": "session",
+        "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
+        "amount": "1000",
+        "payTo": "EecxWpaA3DvMmT8TqyXAtGj93wzpfhWckyBkrJmEUeVJ",
+        "payload": {
+          "session": "Hbk3L8SCHTJSRYRaW1bi71SEy2cPbrd5JRCUjVCoefMZ",
+          "cumulative": "1000",
+          "signature": "biQKWVm7ADvW0gbyeaFEi1FEh1/mw19RY7rlj8aovLdxKpJsWOHpZ+cnCHPtd6Ygi+RSqf5Z54X2KaNgMcJTBg=="
+        },
+        "at": 1795475871666
+      },
+      {
+        "type": "settled",
+        "ms": 201,
+        "status": 200,
+        "success": true,
+        "transaction": "session:Hbk3L8SCHTJSRYRaW1bi71SEy2cPbrd5JRCUjVCoefMZ:525592789:1000",
+        "explorer": null,
+        "extra": { "session": "Hbk3L8SCHTJSRYRaW1bi71SEy2cPbrd5JRCUjVCoefMZ", "cumulative": "1000" },
+        "at": 1795475871867
+      },
+      {
+        "type": "result",
+        "ok": true,
+        "status": 200,
+        "data": {
+          "url": "https://jobs.ashbyhq.com/notion/79c18580-c927-456c-9d5f-72efbc6c43cb",
+          "status": "OPEN",
+          "checkedAt": "2026-11-23T23:17:51.747Z",
+          "evidence": {
+            "type": "ATS_FEED_LISTED_APPLY",
+            "board": "ASHBY",
+            "boardId": "notion",
+            "jobId": "79c18580-c927-456c-9d5f-72efbc6c43cb",
+            "endpoint": "https://api.ashbyhq.com/posting-api/job-board/notion?includeCompensation=true",
+            "httpStatus": 200,
+            "ms": 99,
+            "detail": "Listed in the employer's official job feed"
+          },
+          "job": {
+            "title": "Forward Deployed Engineer, India",
+            "company": null,
+            "location": "Hyderabad, India",
+            "workplace": "HYBRID",
+            "postedAt": "2026-09-15T09:05:25.781Z",
+            "applyUrl": "https://jobs.ashbyhq.com/notion/79c18580-c927-456c-9d5f-72efbc6c43cb/application",
+            "isSoftwareRole": true
+          },
+          "india": { "eligibility": "ELIGIBLE", "tier": "INDIA_CITY", "reasons": ["Location lists India (Hyderabad, India)"] },
+          "cached": false
+        },
+        "paid": { "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1", "amount": "1000", "receipt": "session:Hbk3L8SCHTJSRYRaW1bi71SEy2cPbrd5JRCUjVCoefMZ:525592789:1000" },
+        "refused": null,
+        "error": null,
+        "totalMs": 1448,
+        "budget": { "spentToday": "1000", "dailyCap": "500000" },
+        "session": { "session": "Hbk3L8SCHTJSRYRaW1bi71SEy2cPbrd5JRCUjVCoefMZ", "spent": "1000", "deposit": "50000" },
+        "at": 1795475871868
+      }
+    ]
+  },
+  "gateway": {
+    "url": "https://jobs.lever.co/meesho/7d9af9b5-c1c7-48ec-bbb5-9b25e49f6596",
+    "recordedAt": "2026-11-23T23:17:54.398Z",
+    "events": [
+      { "type": "start", "method": "gateway", "url": "https://jobs.lever.co/meesho/7d9af9b5-c1c7-48ec-bbb5-9b25e49f6596", "at": 1795475871870 },
+      {
+        "type": "402",
+        "ms": 1,
+        "accepts": [
+          { "scheme": "exact", "network": "eip155:5042002", "amount": "1000", "payTo": "0x77090d091Bb68348fbe7FcF4Dc0402D71fE0279E" },
+          { "scheme": "exact", "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1", "amount": "1000", "payTo": "EecxWpaA3DvMmT8TqyXAtGj93wzpfhWckyBkrJmEUeVJ" },
+          { "scheme": "session", "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1", "amount": "1000", "payTo": "EecxWpaA3DvMmT8TqyXAtGj93wzpfhWckyBkrJmEUeVJ" }
+        ],
+        "at": 1795475871871
+      },
+      {
+        "type": "pay",
+        "scheme": "exact",
+        "network": "eip155:5042002",
+        "amount": "1000",
+        "payTo": "0x77090d091Bb68348fbe7FcF4Dc0402D71fE0279E",
+        "payload": {
+          "authorization": {
+            "from": "0x493AD9423b703C88bF85d20dB574fef0c2ab100E",
+            "to": "0x77090d091Bb68348fbe7FcF4Dc0402D71fE0279E",
+            "value": "1000",
+            "validAfter": "1795475271",
+            "validBefore": "1796080771",
+            "nonce": "0xa00ff88f1d08af3ab1cb32a74151585977d56ccf96aa8726c3866e98895ca1e5"
+          },
+          "signature": "0x65e8cdac45e6290577c17e7cddd984414b90a4bab8f7395a22d0358b6d3f0a9e2856afc9715a4d945811f0253488db013a7bbcced752edba1e1cd9c9b22490241b"
+        },
+        "at": 1795475871875
+      },
+      { "type": "settled", "ms": 2522, "status": 200, "success": true, "transaction": "78ce0581-536f-452a-92e8-7acc7f8bd619", "explorer": null, "extra": null, "at": 1795475874397 },
+      {
+        "type": "result",
+        "ok": true,
+        "status": 200,
+        "data": {
+          "url": "https://jobs.lever.co/meesho/7d9af9b5-c1c7-48ec-bbb5-9b25e49f6596",
+          "status": "OPEN",
+          "checkedAt": "2026-11-23T23:17:52.157Z",
+          "evidence": {
+            "type": "ATS_DETAIL_ACTIVE",
+            "board": "LEVER",
+            "boardId": "meesho",
+            "jobId": "7d9af9b5-c1c7-48ec-bbb5-9b25e49f6596",
+            "endpoint": "https://api.lever.co/v0/postings/meesho/7d9af9b5-c1c7-48ec-bbb5-9b25e49f6596",
+            "httpStatus": 200,
+            "ms": 1930,
+            "detail": "Published posting with an application URL"
+          },
+          "job": {
+            "title": "AM/ Manager - Risk & Decision Science",
+            "company": null,
+            "location": "Bangalore, Karnataka",
+            "workplace": "ONSITE",
+            "postedAt": "2025-09-15T06:02:29.833Z",
+            "applyUrl": "https://jobs.lever.co/meesho/7d9af9b5-c1c7-48ec-bbb5-9b25e49f6596/apply",
+            "isSoftwareRole": false
+          },
+          "india": { "eligibility": "ELIGIBLE", "tier": "INDIA_CITY", "reasons": ["Location lists India (Bangalore, Karnataka)"] },
+          "cached": false
+        },
+        "paid": { "network": "eip155:5042002", "amount": "1000", "receipt": "78ce0581-536f-452a-92e8-7acc7f8bd619" },
+        "refused": null,
+        "error": null,
+        "totalMs": 2528,
+        "budget": { "spentToday": "2000", "dailyCap": "500000" },
+        "session": null,
+        "at": 1795475874398
+      }
+    ]
+  },
+  "exact": {
+    "url": "https://job-boards.eu.greenhouse.io/groww/jobs/4970739101",
+    "recordedAt": "2026-11-23T23:17:56.859Z",
+    "events": [
+      { "type": "start", "method": "exact", "url": "https://job-boards.eu.greenhouse.io/groww/jobs/4970739101", "at": 1795475874400 },
+      {
+        "type": "402",
+        "ms": 1,
+        "accepts": [
+          { "scheme": "exact", "network": "eip155:5042002", "amount": "1000", "payTo": "0x77090d091Bb68348fbe7FcF4Dc0402D71fE0279E" },
+          { "scheme": "exact", "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1", "amount": "1000", "payTo": "EecxWpaA3DvMmT8TqyXAtGj93wzpfhWckyBkrJmEUeVJ" },
+          { "scheme": "session", "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1", "amount": "1000", "payTo": "EecxWpaA3DvMmT8TqyXAtGj93wzpfhWckyBkrJmEUeVJ" }
+        ],
+        "at": 1795475874402
+      },
+      {
+        "type": "pay",
+        "scheme": "exact",
+        "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1",
+        "amount": "1000",
+        "payTo": "EecxWpaA3DvMmT8TqyXAtGj93wzpfhWckyBkrJmEUeVJ",
+        "payload": {
+          "transaction": "gQIBAw8AAAAnfSZbbvmRPzYgdids6By+QluUDJA7HniATO0FfntcNAIHqCY+Nt9UJVHStm9Hyd1VMYqIEV3dDUIQbyTuttmVCn7n+aWy9BCzfc5rG79/SpwfWufyVMz+pl+t0gUU4dJPOZjAWoGb2uWy0bhTwZnnYuxSOCzteSx+/OXGT/pcsAZmzq/Obctipc2XaCfyqUB1TdCVJ2pnE0UnMQuRHev95j47RCyzkSFX8TqTPQE0KC0DK1/+zQGi2/G3eQYI3wAupwVKU1qZKSEGTSTocWDaOHx8NbXdvJK7geQfqEBBBUSNBt324ddloZPZy+FGzut5rBy0he1fWzeROoz1hX7/AKkBAAAAAAAAACBOAAAAAEAABgQKAAUAIAADBAIBDOgDAAAAAAAABjcxNWUyMWRhNTM4ODlhZTNiNDNiZDk2Yzk4ZjcyN2I0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIh3xipPdroRpbKwrNBmpAUBx9xPVSiCEwhPFrYGSFjcmolFaQ5Wjg3wU4TtJOpfU0/VS84sE3uGulb+MPp+0A8="
+        },
+        "at": 1795475874563
+      },
+      {
+        "type": "settled",
+        "ms": 2293,
+        "status": 200,
+        "success": true,
+        "transaction": "HMm17CUzp6Rzm5nSJnUo4xnxvyJtCQ4JC7CG3Fm7vQXBjMC2RW7xTPwDhQEagrHVHDq8k8NpZbPC8uW3y9BaKaz",
+        "explorer": "https://explorer.solana.com/tx/HMm17CUzp6Rzm5nSJnUo4xnxvyJtCQ4JC7CG3Fm7vQXBjMC2RW7xTPwDhQEagrHVHDq8k8NpZbPC8uW3y9BaKaz?cluster=devnet",
+        "extra": null,
+        "at": 1795475876857
+      },
+      {
+        "type": "result",
+        "ok": true,
+        "status": 200,
+        "data": {
+          "url": "https://job-boards.eu.greenhouse.io/groww/jobs/4970739101",
+          "status": "OPEN",
+          "checkedAt": "2026-11-23T23:17:55.012Z",
+          "evidence": {
+            "type": "ATS_DETAIL_ACTIVE",
+            "board": "GREENHOUSE",
+            "boardId": "groww",
+            "jobId": "4970739101",
+            "endpoint": "https://boards-api.greenhouse.io/v1/boards/groww/jobs/4970739101?questions=true&pay_transparency=true",
+            "httpStatus": 200,
+            "ms": 511,
+            "detail": "Job is live with an application form (10 questions)"
+          },
+          "job": {
+            "title": "Assistant Manager - Internal Audit",
+            "company": "Groww",
+            "location": "Bengaluru-VTP, India",
+            "workplace": "ONSITE",
+            "postedAt": "2026-09-14T07:49:28.000Z",
+            "applyUrl": "https://job-boards.eu.greenhouse.io/groww/jobs/4970739101",
+            "isSoftwareRole": false
+          },
+          "india": { "eligibility": "ELIGIBLE", "tier": "INDIA_CITY", "reasons": ["Location lists India (Bengaluru-VTP, India)"] },
+          "cached": false
+        },
+        "paid": { "network": "solana:EtWTRABZaYq6iMfeYKouRu166VU2xqa1", "amount": "1000", "receipt": "HMm17CUzp6Rzm5nSJnUo4xnxvyJtCQ4JC7CG3Fm7vQXBjMC2RW7xTPwDhQEagrHVHDq8k8NpZbPC8uW3y9BaKaz" },
+        "refused": null,
+        "error": null,
+        "totalMs": 2458,
+        "budget": { "spentToday": "3000", "dailyCap": "500000" },
+        "session": null,
+        "at": 1795475876858
+      }
+    ]
+  }
+}
